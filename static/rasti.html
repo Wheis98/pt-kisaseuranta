@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Valitse rasti</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Kipa</span>
+    <span class="header-sub" id="kayttaja-info"></span>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Valitse rasti</div>
+    <div id="ei-rasteja" class="msg msg-warn" style="display:none">Ei rasteja vielä. Pyydä adminia luomaan rastit.</div>
+    <div id="rastit-lista"></div>
+  </div>
+
+  <div class="link-group">
+    <a class="nav-link" href="/">Kirjaudu eri nimellä</a>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem("token");
+const nimi = localStorage.getItem("nimi");
+if (!token) window.location.href = "/";
+document.getElementById("kayttaja-info").textContent = nimi;
+
+async function lataaRastit() {
+  const res = await fetch("/api/rastit");
+  const lista = await res.json();
+  const div = document.getElementById("rastit-lista");
+  const eiDiv = document.getElementById("ei-rasteja");
+  div.innerHTML = "";
+  if (lista.length === 0) { eiDiv.style.display = "flex"; return; }
+  eiDiv.style.display = "none";
+  lista.forEach(r => {
+    const btn = document.createElement("button");
+    btn.className = "list-item btn-block";
+    btn.style.cssText = "cursor:pointer;border:none;text-align:left;background:var(--card);margin-bottom:8px;";
+    btn.innerHTML = `
+      <div class="dot dot-blue"></div>
+      <div>
+        <div class="list-item-name">Rasti ${r.numero}</div>
+        <div class="list-item-meta">${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä</div>
+      </div>
+    `;
+    btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); window.location.href = "leimaus.html"; };
+    div.appendChild(btn);
+  });
+}
+lataaRastit();
+</script>
+</body>
+</html>

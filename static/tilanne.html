@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Tilanne</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Tilanne</span>
+    <span class="header-sub" id="info-teksti"></span>
+  </div>
+  <div class="header-right">
+    <a href="leimaus.html" class="btn btn-white btn-sm">← Leimaus</a>
+  </div>
+</div>
+
+<div class="container">
+  <div style="margin-top:20px">
+    <!-- Legenda -->
+    <div class="row-wrap" style="gap:14px;margin-bottom:20px;font-size:.82rem;color:var(--muted)">
+      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-green"></span> Rastillasi</span>
+      <span style="display:flex;align-items:center;gap:5px"><span class="dot" style="background:var(--orange)"></span> Tulossa</span>
+      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-blue"></span> Muualla</span>
+      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-gray"></span> Matkalla</span>
+    </div>
+
+    <div id="lista"></div>
+    <div id="tyhja" class="msg msg-ok" style="display:none">Ei vartioita.</div>
+    <div id="paivitys" style="text-align:center;font-size:.78rem;color:var(--muted);margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const rastinumero = localStorage.getItem("rastinumero") || "";
+const nimi = localStorage.getItem("nimi") || "";
+document.getElementById("info-teksti").textContent = (nimi ? nimi+" · " : "") + (rastinumero ? "Rasti "+rastinumero : "");
+
+function muotoileAika(a) {
+  if (!a) return "";
+  return a.replace(/(\d{2}\.\d{2})\.\d{2}$/, "$1").replace(/:\d{2}$/, "");
+}
+
+function metaTeksti(v) {
+  if (v.status==="rastilla_oma") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
+  if (v.status==="tulossa") return v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika)+(v.arvioitu_saapuminen ? " · saapuu ~"+v.arvioitu_saapuminen : "");
+  if (v.status==="rastilla_muu") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
+  if (v.status==="matkalla") return v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika);
+  return v.jasenet+" jäsentä";
+}
+
+const STATUS_CLASS = { rastilla_oma:"rastilla-oma", tulossa:"tulossa", rastilla_muu:"rastilla-muu", matkalla:"matkalla", ei_aloitettu:"ei-aloitettu" };
+const STATUS_DOT = { rastilla_oma:"dot-green", tulossa:"", rastilla_muu:"dot-blue", matkalla:"dot-gray", ei_aloitettu:"dot-light" };
+const STATUS_LABEL = { rastilla_oma:"Rastillasi", tulossa:"Tulossa ›", rastilla_muu:null, matkalla:"Matkalla", ei_aloitettu:"–" };
+const JARJESTYS = ["tulossa","rastilla_oma","rastilla_muu","matkalla","ei_aloitettu"];
+
+async function paivita() {
+  const res = await fetch("/api/tilanne?numero=" + encodeURIComponent(rastinumero));
+  if (!res.ok) return;
+  const vartiot = await res.json();
+  vartiot.sort((a,b) => JARJESTYS.indexOf(a.status)-JARJESTYS.indexOf(b.status));
+  const lista = document.getElementById("lista");
+  const tyhja = document.getElementById("tyhja");
+  if (!vartiot.length) { lista.innerHTML=""; tyhja.style.display="flex"; return; }
+  tyhja.style.display="none";
+  lista.innerHTML="";
+  vartiot.forEach(v => {
+    const dotColor = v.status==="tulossa" ? "style='background:var(--orange)'" : "";
+    const labelStr = v.status==="rastilla_muu" ? "Rasti "+v.sijainti : (STATUS_LABEL[v.status]||"");
+    const labelColor = v.status==="tulossa" ? "color:var(--orange);font-weight:700;" : v.status==="rastilla_oma" ? "color:var(--success);font-weight:700;" : "color:var(--muted);";
+    const div = document.createElement("div");
+    div.className = "status-card "+(STATUS_CLASS[v.status]||"");
+    div.innerHTML = `
+      <div class="dot ${STATUS_DOT[v.status]||''}" ${dotColor}></div>
+      <div class="status-card-info">
+        <div class="status-card-name">${v.nimi}</div>
+        <div class="status-card-meta">${metaTeksti(v)}</div>
+      </div>
+      <span style="font-size:.82rem;white-space:nowrap;${labelColor}">${labelStr}</span>
+    `;
+    lista.appendChild(div);
+  });
+  document.getElementById("paivitys").textContent = "Päivitetty "+new Date().toLocaleTimeString("fi-FI",{hour:"2-digit",minute:"2-digit"});
+}
+
+paivita();
+setInterval(paivita, 30000);
+</script>
+</body>
+</html>

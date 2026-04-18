@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Vartiot</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Hallitse vartioita</span>
+  </div>
+  <div class="header-right">
+    <a href="admin.html" class="btn btn-white btn-sm">← Admin</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Lomake -->
+  <div id="lomake-osio" style="margin-top:24px">
+    <div class="card">
+      <div class="card-title">Luo vartio</div>
+      <div id="virhe" class="msg msg-error" style="display:none"></div>
+      <div class="field">
+        <label for="nimi">Vartion nimi</label>
+        <input type="text" id="nimi" placeholder="esim. Ketut" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="jasenet">Jäsenten määrä</label>
+        <input type="number" id="jasenet" placeholder="esim. 5" min="0" inputmode="numeric">
+      </div>
+      <button class="btn btn-primary btn-block" id="btn" onclick="luoVartio()">Luo vartio</button>
+    </div>
+
+    <!-- Vartiolista -->
+    <div class="card">
+      <div class="card-title">Luodut vartiot</div>
+      <div id="vartio-lista"></div>
+    </div>
+  </div>
+
+  <!-- QR tulos -->
+  <div id="tulos" style="display:none;margin-top:24px;text-align:center">
+    <div class="msg msg-ok">Vartio luotu onnistuneesti!</div>
+    <div class="qr-card" style="display:inline-block;margin:16px 0">
+      <h3 id="tulos-nimi"></h3>
+      <p id="tulos-jasenet"></p>
+      <div id="qr-koodi"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost btn-block print-show" onclick="window.print()">Tulosta QR-koodi</button>
+      <button class="btn btn-primary btn-block" onclick="uusiVartio()">Luo uusi vartio</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "Content-Type": "application/json", "x-admin-token": adminToken }; }
+
+async function luoVartio() {
+  const nimi = document.getElementById("nimi").value.trim();
+  const jasetVal = document.getElementById("jasenet").value;
+  const jasenet = parseInt(jasetVal);
+  const virhe = document.getElementById("virhe");
+  virhe.style.display="none";
+  if (!nimi) { virhe.textContent="Syötä vartion nimi."; virhe.style.display="flex"; return; }
+  if (jasetVal===""||isNaN(jasenet)||jasenet<0) { virhe.textContent="Syötä jäsenten määrä."; virhe.style.display="flex"; return; }
+  const btn = document.getElementById("btn");
+  btn.disabled=true; btn.textContent="Tallennetaan…";
+  const res = await fetch("/api/vartio", { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi,jasenet}) });
+  if (!res.ok) {
+    if (res.status===403) { window.location.href="/admin.html"; return; }
+    virhe.textContent="Virhe tallennuksessa."; virhe.style.display="flex";
+    btn.disabled=false; btn.textContent="Luo vartio"; return;
+  }
+  naytaQR(await res.json());
+  lataaLista();
+}
+
+function naytaQR(vartio) {
+  document.getElementById("tulos-nimi").textContent = vartio.nimi;
+  document.getElementById("tulos-jasenet").textContent = vartio.jasenet+" jäsentä";
+  document.getElementById("qr-koodi").innerHTML = "";
+  new QRCode(document.getElementById("qr-koodi"), { text:vartio.token, width:200, height:200, correctLevel:QRCode.CorrectLevel.M });
+  document.getElementById("lomake-osio").style.display="none";
+  document.getElementById("tulos").style.display="block";
+}
+
+function uusiVartio() {
+  document.getElementById("nimi").value=""; document.getElementById("jasenet").value="";
+  const btn=document.getElementById("btn"); btn.disabled=false; btn.textContent="Luo vartio";
+  document.getElementById("tulos").style.display="none";
+  document.getElementById("lomake-osio").style.display="block";
+}
+
+async function lataaLista() {
+  const res = await fetch("/api/vartiot");
+  const lista = await res.json();
+  const div = document.getElementById("vartio-lista");
+  if (!lista.length) { div.innerHTML="<p style='color:var(--muted);font-size:.9rem'>Ei vartioita vielä.</p>"; return; }
+  div.innerHTML="";
+  lista.forEach(v => {
+    const item = document.createElement("div");
+    item.className="list-item";
+    item.innerHTML=`
+      <div class="dot dot-blue"></div>
+      <div style="flex:1">
+        <div class="list-item-name">${v.nimi}</div>
+        <div class="list-item-meta">${v.jasenet} jäsentä</div>
+      </div>
+      <button class="btn btn-danger btn-xs" onclick="poista(${v.id})">Poista</button>
+    `;
+    div.appendChild(item);
+  });
+}
+
+async function poista(id) {
+  if (!confirm("Poistetaanko vartio?")) return;
+  await fetch("/api/vartio/"+id, { method:"DELETE", headers:adminHeaders() });
+  lataaLista();
+}
+
+document.addEventListener("keydown", e => { if (e.key==="Enter") luoVartio(); });
+lataaLista();
+</script>
+</body>
+</html>

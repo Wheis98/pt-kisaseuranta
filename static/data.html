@@ -4,100 +4,89 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kipa — Leimaukset</title>
+  <link rel="stylesheet" href="/style.css">
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
-    h2 { margin-bottom: 8px; }
-    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
-    .toolbar button { padding: 8px 16px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white; }
-    .toolbar button:hover { background: #f3f4f6; }
-    #export-btn { background: #2563eb; color: white; border-color: #2563eb; }
-    #export-btn:hover { background: #1d4ed8; }
-    #count { color: #555; font-size: 0.9rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-    th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; }
-    td { padding: 10px 8px; border-bottom: 1px solid #e5e7eb; }
-    tr:hover td { background: #f9fafb; }
-    #tila { color: #555; margin-top: 24px; }
-    a.linkki { display: inline-block; margin-top: 24px; color: #2563eb; }
+    .table-wrap { overflow-x: auto; }
+    .badge-sisaan { background:#dcfce7; color:#166534; }
+    .badge-ulos { background:#fee2e2; color:#991b1b; }
   </style>
 </head>
 <body>
-
-<h2>Kaikki leimaukset</h2>
-
-<div class="toolbar">
-  <button onclick="lataa()">Päivitä</button>
-  <button id="export-btn" onclick="exportCSV()">Lataa CSV</button>
-  <span id="count"></span>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Leimaukset</span>
+    <span class="header-sub" id="count"></span>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-white btn-sm" onclick="lataa()">Päivitä</button>
+    <button class="btn btn-white btn-sm" onclick="exportCSV()">CSV ↓</button>
+    <a href="leimaus.html" class="btn btn-white btn-sm">← Takaisin</a>
+  </div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>Käyttäjä</th>
-      <th>Rasti</th>
-      <th>Vartio</th>
-      <th>Jäsenet</th>
-      <th>Aika</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
-
-<div id="tila"></div>
-<a class="linkki" href="leimaus.html">← Takaisin leimaukseen</a>
+<div class="container-wide">
+  <div class="card" style="margin-top:24px;padding:0">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Käyttäjä</th>
+            <th>Rasti</th>
+            <th>Vartio</th>
+            <th>Jäsenet</th>
+            <th>Tyyppi</th>
+            <th>Aika</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="tila" class="msg msg-error" style="display:none"></div>
+</div>
 
 <script>
 let rivit = [];
 
 async function lataa() {
-  document.getElementById("tila").textContent = "Ladataan…";
   try {
     const res = await fetch("/api/data");
-    if (!res.ok) throw new Error("Palvelinvirhe " + res.status);
+    if (!res.ok) throw new Error("Palvelinvirhe "+res.status);
     rivit = await res.json();
-    renderTable(rivit);
-    document.getElementById("tila").textContent = "";
-  } catch (e) {
-    document.getElementById("tila").textContent = "Virhe: " + e.message;
+    render(rivit);
+  } catch(e) {
+    const t=document.getElementById("tila"); t.textContent="Virhe: "+e.message; t.style.display="flex";
   }
 }
 
-function renderTable(data) {
+function render(data) {
   const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
+  tbody.innerHTML="";
   data.forEach(r => {
     const tr = document.createElement("tr");
-    ["kayttaja", "numero", "vartio", "jasenet", "aika"].forEach(k => {
-      const td = document.createElement("td");
-      td.textContent = r[k];
-      tr.appendChild(td);
+    ["kayttaja","numero","vartio","jasenet"].forEach(k => {
+      const td=document.createElement("td"); td.textContent=r[k]; tr.appendChild(td);
     });
+    const tdT=document.createElement("td"); tdT.className="td-badge";
+    tdT.innerHTML=`<span class="badge ${r.tyyppi==='sisaan'?'badge-sisaan':'badge-ulos'}">${r.tyyppi==='sisaan'?'Sisään':'Ulos'}</span>`;
+    tr.appendChild(tdT);
+    const tdA=document.createElement("td"); tdA.textContent=r.aika; tr.appendChild(tdA);
     tbody.appendChild(tr);
   });
-  document.getElementById("count").textContent = data.length + " leimaus" + (data.length !== 1 ? "ta" : "");
+  document.getElementById("count").textContent=data.length+" leimaust"+(data.length!==1?"a":"");
 }
 
 function exportCSV() {
-  if (!rivit.length) { alert("Ei dataa vietäväksi."); return; }
-  const header = ["Käyttäjä", "Rasti", "Vartio", "Jäsenet", "Aika"];
-  const rows = rivit.map(r =>
-    [r.kayttaja, r.numero, r.vartio, r.jasenet, r.aika]
-      .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join(",")
-  );
-  const csv = [header.join(","), ...rows].join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "leimaukset.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+  if (!rivit.length) { alert("Ei dataa."); return; }
+  const header=["Käyttäjä","Rasti","Vartio","Jäsenet","Tyyppi","Aika"];
+  const rows=rivit.map(r=>[r.kayttaja,r.numero,r.vartio,r.jasenet,r.tyyppi,r.aika].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
+  const csv=[header.join(","),...rows].join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
+  a.download="leimaukset.csv"; a.click();
 }
 
 lataa();
 </script>
-
 </body>
 </html>

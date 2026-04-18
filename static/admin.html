@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Admin</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Kipa Admin</span>
+    <span class="header-sub" id="header-sub">Hallintapaneeli</span>
+  </div>
+  <div class="header-right" id="logout-wrap" style="display:none">
+    <button class="btn btn-white btn-sm" onclick="kirjauduUlos()">Kirjaudu ulos</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Kirjautuminen -->
+  <div id="kirjautuminen" class="card" style="margin-top:32px">
+    <div class="card-title" id="lomake-otsikko">Kirjaudu sisään</div>
+    <div id="virhe" class="msg msg-error" style="display:none"></div>
+    <div id="ok-msg" class="msg msg-ok" style="display:none"></div>
+    <div class="field">
+      <label for="kayttajanimi">Käyttäjänimi</label>
+      <input type="text" id="kayttajanimi" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="salasana">Salasana</label>
+      <input type="password" id="salasana" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block" id="kirjaudu-btn" onclick="kirjaudu()">Kirjaudu →</button>
+    <div class="link-group">
+      <a class="nav-link" href="/">Takaisin etusivulle</a>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" style="display:none;margin-top:24px">
+    <a class="big-btn" href="qr.html">
+      Hallitse vartioita
+      <span>Luo, muokkaa ja poista vartioita · tulosta QR-koodit</span>
+    </a>
+    <a class="big-btn" href="rastit.html">
+      Hallitse rasteja
+      <span>Järjestys, kestot ja siirtymäajat</span>
+    </a>
+
+    <hr class="divider">
+
+    <div class="card">
+      <div class="card-title">Luo uusi admin-tunnus</div>
+      <div id="admin-virhe" class="msg msg-error" style="display:none"></div>
+      <div id="admin-ok" class="msg msg-ok" style="display:none"></div>
+      <div class="row" style="gap:8px;align-items:flex-end">
+        <div class="field" style="flex:1;margin-bottom:0">
+          <label>Käyttäjänimi</label>
+          <input type="text" id="uusi-kayttajanimi" placeholder="käyttäjänimi">
+        </div>
+        <div class="field" style="flex:1;margin-bottom:0">
+          <label>Salasana</label>
+          <input type="password" id="uusi-salasana" placeholder="salasana">
+        </div>
+        <button class="btn btn-primary" style="margin-bottom:0;height:44px" onclick="luoAdmin()">Luo</button>
+      </div>
+    </div>
+
+    <div class="link-group">
+      <a class="nav-link" href="/">Etusivulle</a>
+    </div>
+  </div>
+</div>
+
+<script>
+async function tarkistaSetup() {
+  const res = await fetch("/api/admin/setup_tarvitaan");
+  const data = await res.json();
+  if (data.tarvitaan) {
+    document.getElementById("lomake-otsikko").textContent = "Luo ensimmäinen admin";
+    document.getElementById("kirjaudu-btn").textContent = "Luo tunnus →";
+    document.getElementById("kirjaudu-btn").onclick = luoEnsimmainen;
+  }
+}
+
+async function luoEnsimmainen() {
+  const k = document.getElementById("kayttajanimi").value.trim();
+  const s = document.getElementById("salasana").value;
+  const virhe = document.getElementById("virhe");
+  const okDiv = document.getElementById("ok-msg");
+  virhe.style.display="none"; okDiv.style.display="none";
+  if (!k||!s) { virhe.textContent="Täytä molemmat kentät."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/admin/setup", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({kayttajanimi:k,salasana:s}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  okDiv.textContent="Tunnus luotu! Kirjaudutaan..."; okDiv.style.display="flex";
+  setTimeout(() => { document.getElementById("kirjaudu-btn").onclick=kirjaudu; kirjaudu(); }, 900);
+}
+
+async function kirjaudu() {
+  const k = document.getElementById("kayttajanimi").value.trim();
+  const s = document.getElementById("salasana").value;
+  const virhe = document.getElementById("virhe");
+  virhe.style.display="none";
+  if (!k||!s) { virhe.textContent="Täytä molemmat kentät."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/admin/login", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({kayttajanimi:k,salasana:s}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  const data = await res.json();
+  localStorage.setItem("admin_token", data.admin_token);
+  naytaDashboard();
+}
+
+function naytaDashboard() {
+  document.getElementById("kirjautuminen").style.display="none";
+  document.getElementById("dashboard").style.display="block";
+  document.getElementById("logout-wrap").style.display="flex";
+}
+
+function kirjauduUlos() { localStorage.removeItem("admin_token"); location.reload(); }
+
+async function luoAdmin() {
+  const k = document.getElementById("uusi-kayttajanimi").value.trim();
+  const s = document.getElementById("uusi-salasana").value;
+  const virhe = document.getElementById("admin-virhe");
+  const okDiv = document.getElementById("admin-ok");
+  virhe.style.display="none"; okDiv.style.display="none";
+  if (!k||!s) { virhe.textContent="Täytä molemmat kentät."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/admin/luo", { method:"POST", headers:{"Content-Type":"application/json","x-admin-token":localStorage.getItem("admin_token")}, body:JSON.stringify({kayttajanimi:k,salasana:s}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  okDiv.textContent="Admin-tunnus luotu!"; okDiv.style.display="flex";
+  document.getElementById("uusi-kayttajanimi").value=""; document.getElementById("uusi-salasana").value="";
+}
+
+if (localStorage.getItem("admin_token")) naytaDashboard();
+else tarkistaSetup();
+document.addEventListener("keydown", e => { if (e.key==="Enter" && document.getElementById("kirjautuminen").style.display!=="none") document.getElementById("kirjaudu-btn").click(); });
+</script>
+</body>
+</html>

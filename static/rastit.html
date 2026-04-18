@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Rastit</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .rasti-item { display:flex; align-items:center; gap:10px; padding:12px 14px; background:var(--card); border:1.5px solid var(--border); border-radius:10px; margin-bottom:4px; }
+    .rasti-item.dragging { opacity:.4; }
+    .rasti-item.drag-over { border-color:var(--primary); background:#eef2ff; }
+    .rasti-num { font-size:.8rem; font-weight:700; color:var(--muted); min-width:20px; }
+    .rasti-name { font-weight:700; flex:1; }
+    .rasti-meta { font-size:.8rem; color:var(--muted); white-space:nowrap; }
+    .muokkaus-row { display:flex; gap:6px; align-items:center; padding:8px 14px 8px 52px; background:#f8fafc; border:1.5px solid var(--primary); border-top:none; border-radius:0 0 10px 10px; margin-bottom:4px; flex-wrap:wrap; }
+    .muokkaus-row input { padding:7px 10px; font-size:.88rem; border:1.5px solid var(--border); border-radius:6px; background:white; }
+    .muokkaus-row input[type=text] { flex:2; min-width:100px; }
+    .muokkaus-row input[type=number] { flex:1; min-width:60px; }
+    .siirtyma-row { display:flex; align-items:center; gap:8px; padding:5px 14px 5px 52px; font-size:.8rem; color:var(--muted); }
+    .siirtyma-row input { width:52px; padding:4px 8px; font-size:.8rem; border:1.5px solid var(--border); border-radius:6px; background:white; margin-bottom:0; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Hallitse rasteja</span>
+  </div>
+  <div class="header-right">
+    <a href="admin.html" class="btn btn-white btn-sm">← Admin</a>
+  </div>
+</div>
+
+<div class="container-wide">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Lisää rasti</div>
+    <div id="virhe" class="msg msg-error" style="display:none"></div>
+    <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="flex:2;min-width:120px;margin-bottom:0">
+        <label>Nimi / numero</label>
+        <input type="text" id="uusi-numero" placeholder="esim. 1">
+      </div>
+      <div class="field" style="flex:1;min-width:80px;margin-bottom:0">
+        <label>Kesto (min)</label>
+        <input type="number" id="uusi-kesto" value="10" min="1">
+      </div>
+      <div class="field" style="flex:1;min-width:80px;margin-bottom:0">
+        <label>Siirtymä (min)</label>
+        <input type="number" id="uusi-siirtyma" value="5" min="1">
+      </div>
+      <button class="btn btn-primary" style="margin-bottom:0;height:44px" onclick="lisaaRasti()">Lisää</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Rastijärjestys <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:.78rem">— vedä järjestelläksesi</span></div>
+    <div id="rasti-lista"></div>
+  </div>
+
+  <div class="link-group">
+    <a class="nav-link" href="rasti.html">Siirry rasti-valintaan</a>
+  </div>
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "Content-Type":"application/json", "x-admin-token":adminToken }; }
+
+let rastit = [];
+let dragSrcIdx = null;
+
+async function lataaRastit() {
+  const res = await fetch("/api/rastit");
+  rastit = await res.json();
+  renderLista();
+}
+
+function renderLista() {
+  const ul = document.getElementById("rasti-lista");
+  ul.innerHTML="";
+  rastit.forEach((r,i) => {
+    const li = document.createElement("div");
+    li.className="rasti-item"; li.draggable=true; li.dataset.id=r.id; li.dataset.idx=i;
+    li.innerHTML=`
+      <span class="drag-handle">⠿</span>
+      <span class="rasti-num">${i+1}</span>
+      <span class="rasti-name">${r.numero}</span>
+      <span class="rasti-meta">${r.kesto_min} min rastilla</span>
+      <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus(${i})">Muokkaa</button>
+      <button class="btn btn-danger btn-xs" onclick="poistaRasti(${r.id})">Poista</button>
+    `;
+    li.addEventListener("dragstart", e => { dragSrcIdx=i; li.classList.add("dragging"); e.dataTransfer.effectAllowed="move"; });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragover", e => { e.preventDefault(); document.querySelectorAll(".rasti-item").forEach(el=>el.classList.remove("drag-over")); li.classList.add("drag-over"); });
+    li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+    li.addEventListener("drop", async e => { e.preventDefault(); li.classList.remove("drag-over"); if (dragSrcIdx===null||dragSrcIdx===i) return; const s=rastit.splice(dragSrcIdx,1)[0]; rastit.splice(i,0,s); dragSrcIdx=null; renderLista(); await tallennaJarjestys(); });
+    ul.appendChild(li);
+
+    if (i < rastit.length-1) {
+      const sr = document.createElement("div");
+      sr.className="siirtyma-row"; sr.id="siirtyma-"+r.id;
+      sr.innerHTML=`↓ siirtymä: <input type="number" value="${r.siirtyma_min}" min="1" id="s-${r.id}"> min <button class="btn btn-ghost btn-xs" onclick="tallennaSiirtyma(${r.id},${i})">Tallenna</button>`;
+      ul.appendChild(sr);
+    }
+  });
+}
+
+async function tallennaJarjestys() {
+  await fetch("/api/rastit/jarjestys", { method:"POST", headers:adminHeaders(), body:JSON.stringify({jarjestys:rastit.map(r=>r.id)}) });
+}
+
+async function tallennaSiirtyma(id, idx) {
+  const arvo = parseInt(document.getElementById("s-"+id).value);
+  if (isNaN(arvo)||arvo<1) return;
+  const r = rastit[idx];
+  await fetch("/api/rasti/"+id, { method:"PUT", headers:adminHeaders(), body:JSON.stringify({numero:r.numero,kesto_min:r.kesto_min,siirtyma_min:arvo}) });
+  rastit[idx].siirtyma_min=arvo;
+  const btn = document.querySelector("#siirtyma-"+id+" button");
+  btn.textContent="✓"; setTimeout(()=>{ btn.textContent="Tallenna"; },1500);
+}
+
+function avaMuokkaus(idx) {
+  document.querySelectorAll(".muokkaus-row").forEach(el=>el.remove());
+  document.querySelectorAll(".rasti-item .btn-ghost").forEach(b=>{ if(b.textContent==="✕") { b.textContent="Muokkaa"; b.onclick=()=>avaMuokkaus(parseInt(b.closest(".rasti-item").dataset.idx)); } });
+  const r = rastit[idx];
+  const li = document.getElementById("rasti-lista").querySelectorAll(".rasti-item")[idx];
+  const editBtn = li.querySelectorAll(".btn-ghost")[0];
+  editBtn.textContent="✕"; editBtn.onclick=()=>{ document.querySelectorAll(".muokkaus-row").forEach(el=>el.remove()); editBtn.textContent="Muokkaa"; editBtn.onclick=()=>avaMuokkaus(idx); };
+  const muokkaus = document.createElement("div");
+  muokkaus.className="muokkaus-row";
+  muokkaus.innerHTML=`
+    <input type="text" id="m-numero-${idx}" value="${r.numero}" placeholder="Nimi">
+    <input type="number" id="m-kesto-${idx}" value="${r.kesto_min}" min="1" placeholder="Kesto">
+    <input type="number" id="m-siirtyma-${idx}" value="${r.siirtyma_min}" min="1" placeholder="Siirtymä">
+    <button class="btn btn-success btn-xs" onclick="tallennaMuokkaus(${idx},${r.id})">Tallenna</button>
+    <button class="btn btn-ghost btn-xs" onclick="this.closest('.muokkaus-row').remove()">Peruuta</button>
+  `;
+  li.insertAdjacentElement("afterend", muokkaus);
+}
+
+async function tallennaMuokkaus(idx, id) {
+  const numero = document.getElementById("m-numero-"+idx).value.trim();
+  const kesto = parseInt(document.getElementById("m-kesto-"+idx).value);
+  const siirtyma = parseInt(document.getElementById("m-siirtyma-"+idx).value);
+  if (!numero||isNaN(kesto)||isNaN(siirtyma)) return;
+  await fetch("/api/rasti/"+id, { method:"PUT", headers:adminHeaders(), body:JSON.stringify({numero,kesto_min:kesto,siirtyma_min:siirtyma}) });
+  await lataaRastit();
+}
+
+async function lisaaRasti() {
+  const numero = document.getElementById("uusi-numero").value.trim();
+  const kesto = parseInt(document.getElementById("uusi-kesto").value);
+  const siirtyma = parseInt(document.getElementById("uusi-siirtyma").value);
+  const virhe = document.getElementById("virhe");
+  virhe.style.display="none";
+  if (!numero) { virhe.textContent="Syötä rastin nimi."; virhe.style.display="flex"; return; }
+  if (isNaN(kesto)||kesto<1) { virhe.textContent="Syötä kesto."; virhe.style.display="flex"; return; }
+  if (isNaN(siirtyma)||siirtyma<1) { virhe.textContent="Syötä siirtymäaika."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/rasti", { method:"POST", headers:adminHeaders(), body:JSON.stringify({numero,kesto_min:kesto,siirtyma_min:siirtyma}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  document.getElementById("uusi-numero").value=""; document.getElementById("uusi-kesto").value="10"; document.getElementById("uusi-siirtyma").value="5";
+  await lataaRastit();
+}
+
+async function poistaRasti(id) {
+  if (!confirm("Poistetaanko rasti?")) return;
+  await fetch("/api/rasti/"+id, { method:"DELETE", headers:adminHeaders() });
+  await lataaRastit();
+}
+
+document.addEventListener("keydown", e => { if (e.key==="Enter") lisaaRasti(); });
+lataaRastit();
+</script>
+</body>
+</html>
