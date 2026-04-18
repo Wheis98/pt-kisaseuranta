@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Kirjautuminen</title>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 60px auto; padding: 0 16px; }
+    h2 { margin-bottom: 24px; }
+    label { display: block; margin-bottom: 4px; font-weight: bold; }
+    input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; margin-bottom: 16px; border: 1px solid #ccc; border-radius: 4px; }
+    button { width: 100%; padding: 12px; font-size: 1rem; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #93c5fd; cursor: default; }
+    #virhe { color: red; margin-top: 12px; }
+  </style>
+</head>
+<body>
+
+<h2>Kirjaudu sisään</h2>
+
+<label for="nimi">Nimi</label>
+<input type="text" id="nimi" placeholder="Etunimi Sukunimi" autocomplete="name">
+
+<label for="rastinumero">Rastinumero</label>
+<input type="text" id="rastinumero" placeholder="esim. 42" inputmode="numeric">
+
+<button id="btn" onclick="tallenna()">Jatka</button>
+<div id="virhe"></div>
+
+<script>
+async function tallenna() {
+  const nimi = document.getElementById("nimi").value.trim();
+  const rastinumero = document.getElementById("rastinumero").value.trim();
+  const virhe = document.getElementById("virhe");
+  const btn = document.getElementById("btn");
+
+  virhe.textContent = "";
+  if (!nimi) { virhe.textContent = "Syötä nimi."; return; }
+  if (!rastinumero) { virhe.textContent = "Syötä rastinumero."; return; }
+
+  btn.disabled = true;
+  btn.textContent = "Tallennetaan…";
+
+  try {
+    const res = await fetch("/api/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nimi, rastinumero }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Palvelinvirhe");
+    }
+    const data = await res.json();
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("nimi", data.nimi);
+    localStorage.setItem("rastinumero", data.rastinumero);
+    window.location.href = "leimaus.html";
+  } catch (e) {
+    virhe.textContent = "Virhe: " + e.message;
+    btn.disabled = false;
+    btn.textContent = "Jatka";
+  }
+}
+
+document.addEventListener("keydown", e => { if (e.key === "Enter") tallenna(); });
+</script>
+
+</body>
+</html>

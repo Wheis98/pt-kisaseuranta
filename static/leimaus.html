@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Leimaus</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    h2 { margin-bottom: 4px; }
+    h3 { margin: 24px 0 8px; }
+    .kayttaja { color: #555; margin-bottom: 24px; }
+    label { display: block; margin-bottom: 4px; font-weight: bold; }
+    input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; margin-bottom: 16px; border: 1px solid #ccc; border-radius: 4px; }
+    input[readonly] { background: #f3f4f6; color: #555; }
+    .row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .row button { flex: 1; padding: 10px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white; }
+    .row button.active { background: #2563eb; color: white; border-color: #2563eb; }
+    #reader { margin-bottom: 16px; }
+    #tallenna-btn { width: 100%; padding: 12px; font-size: 1rem; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    #tallenna-btn:disabled { background: #86efac; cursor: default; }
+    #viesti { margin-top: 12px; font-weight: bold; }
+    #viesti.ok { color: #16a34a; }
+    #viesti.virhe { color: red; }
+    a.linkki { display: block; text-align: center; margin-top: 24px; color: #2563eb; }
+    .divider { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+
+    /* Aktiiviset vartiot */
+    #aktiiviset-lista { list-style: none; padding: 0; margin: 0; }
+    #aktiiviset-lista li {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px;
+      margin-bottom: 8px; background: #f9fafb;
+    }
+    .vartio-info { flex: 1; }
+    .vartio-nimi { font-weight: bold; }
+    .vartio-meta { font-size: 0.85rem; color: #666; }
+    .ulos-btn {
+      padding: 6px 12px; font-size: 0.85rem; background: #dc2626;
+      color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;
+    }
+    .ulos-btn:disabled { background: #fca5a5; cursor: default; }
+    #ei-aktiivisia { color: #999; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+<h2>Leimaus</h2>
+<div class="kayttaja" id="kayttaja-info"></div>
+
+<h3>Rastilla nyt</h3>
+<ul id="aktiiviset-lista"></ul>
+<div id="ei-aktiivisia" style="display:none">Ei aktiivisia vartioita</div>
+
+<hr class="divider">
+
+<h3>Leimaa sisään</h3>
+
+<div class="row">
+  <button id="qr-btn" onclick="avaaQR()">QR-koodi</button>
+  <button id="man-btn" onclick="manuaalinen()">Manuaalinen</button>
+</div>
+
+<div id="reader"></div>
+
+<label for="vartio">Vartion nimi</label>
+<input type="text" id="vartio" placeholder="esim. Ketut">
+
+<label for="jasenet">Jäsenten määrä</label>
+<input type="number" id="jasenet" placeholder="esim. 5" min="0" inputmode="numeric">
+
+<label for="aika">Aikaleima</label>
+<input type="text" id="aika" readonly>
+
+<button id="tallenna-btn" onclick="tallennaLeimaus()">Tallenna leimaus</button>
+<div id="viesti"></div>
+
+<a class="linkki" href="data.html">Katso kaikki leimaukset</a>
+
+<script>
+const token = localStorage.getItem("token");
+const nimi = localStorage.getItem("nimi");
+const rastinumero = localStorage.getItem("rastinumero");
+
+if (!token) window.location.href = "/";
+
+document.getElementById("kayttaja-info").textContent = nimi + " · Rasti " + rastinumero;
+
+let qrScanner = null;
+
+function aikaleima() {
+  return new Date().toLocaleString("fi-FI");
+}
+
+function setViesti(teksti, tyyppi) {
+  const el = document.getElementById("viesti");
+  el.textContent = teksti;
+  el.className = tyyppi;
+}
+
+// --- Aktiiviset vartiot ---
+
+async function paivitaAktiiviset() {
+  const res = await fetch("/api/aktiiviset?numero=" + encodeURIComponent(rastinumero));
+  if (!res.ok) return;
+  const lista = await res.json();
+  const ul = document.getElementById("aktiiviset-lista");
+  const eiDiv = document.getElementById("ei-aktiivisia");
+  ul.innerHTML = "";
+  if (lista.length === 0) {
+    eiDiv.style.display = "";
+    return;
+  }
+  eiDiv.style.display = "none";
+  lista.forEach(v => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <div class="vartio-info">
+        <div class="vartio-nimi">${v.vartio}</div>
+        <div class="vartio-meta">${v.jasenet} jäsentä · ${v.aika}</div>
+      </div>
+      <button class="ulos-btn" onclick="leimaaUlos('${v.vartio.replace(/'/g,"\\'")}', ${v.jasenet}, this)">Leimaa ulos</button>
+    `;
+    ul.appendChild(li);
+  });
+}
+
+async function leimaaUlos(vartio, jasenet, btn) {
+  btn.disabled = true;
+  btn.textContent = "Tallennetaan…";
+  try {
+    const res = await fetch("/api/leimaus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, vartio, jasenet, aika: aikaleima(), tyyppi: "ulos" }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+      throw new Error(err.detail || "Palvelinvirhe");
+    }
+    await paivitaAktiiviset();
+  } catch (e) {
+    setViesti("Virhe: " + e.message, "virhe");
+    btn.disabled = false;
+    btn.textContent = "Leimaa ulos";
+  }
+}
+
+// --- Sisäänleimaus ---
+
+function manuaalinen() {
+  if (qrScanner) { qrScanner.stop().catch(() => {}); qrScanner = null; }
+  document.getElementById("reader").innerHTML = "";
+  document.getElementById("vartio").value = "";
+  document.getElementById("jasenet").value = "";
+  document.getElementById("aika").value = aikaleima();
+  document.getElementById("qr-btn").classList.remove("active");
+  document.getElementById("man-btn").classList.add("active");
+  document.getElementById("vartio").focus();
+}
+
+function avaaQR() {
+  document.getElementById("qr-btn").classList.add("active");
+  document.getElementById("man-btn").classList.remove("active");
+  if (qrScanner) return;
+  qrScanner = new Html5Qrcode("reader");
+  qrScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    (text) => {
+      const osat = text.split(";");
+      osat.forEach(o => {
+        const idx = o.indexOf("=");
+        if (idx === -1) return;
+        const k = o.slice(0, idx).trim();
+        const v = o.slice(idx + 1).trim();
+        if (k === "Vartio") document.getElementById("vartio").value = v;
+        if (k === "Jasenet") document.getElementById("jasenet").value = v;
+      });
+      document.getElementById("aika").value = aikaleima();
+      qrScanner.stop().then(() => { qrScanner = null; });
+    }
+  ).catch(err => {
+    setViesti("QR-virhe: " + err, "virhe");
+    qrScanner = null;
+  });
+}
+
+async function tallennaLeimaus() {
+  const vartio = document.getElementById("vartio").value.trim();
+  const jasetVal = document.getElementById("jasenet").value;
+  const jasenet = parseInt(jasetVal);
+  const aika = document.getElementById("aika").value || aikaleima();
+
+  setViesti("", "");
+  if (!vartio) { setViesti("Syötä vartion nimi.", "virhe"); return; }
+  if (jasetVal === "" || isNaN(jasenet) || jasenet < 0) {
+    setViesti("Syötä jäsenten määrä.", "virhe"); return;
+  }
+
+  const btn = document.getElementById("tallenna-btn");
+  btn.disabled = true;
+  btn.textContent = "Tallennetaan…";
+
+  try {
+    const res = await fetch("/api/leimaus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, vartio, jasenet, aika, tyyppi: "sisaan" }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+      throw new Error(err.detail || "Palvelinvirhe");
+    }
+    setViesti("Tallennettu!", "ok");
+    document.getElementById("vartio").value = "";
+    document.getElementById("jasenet").value = "";
+    document.getElementById("aika").value = "";
+    await paivitaAktiiviset();
+  } catch (e) {
+    setViesti("Virhe: " + e.message, "virhe");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Tallenna leimaus";
+  }
+}
+
+// Lataa aktiiviset heti ja päivitä 30s välein
+paivitaAktiiviset();
+setInterval(paivitaAktiiviset, 30000);
+</script>
+
+</body>
+</html>
