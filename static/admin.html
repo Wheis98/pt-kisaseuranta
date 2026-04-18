@@ -51,6 +51,23 @@
 
     <hr class="divider">
 
+    <!-- Käyttäjähallinta -->
+    <div class="card">
+      <div class="card-title">Käyttäjät (rastihenkilöt)</div>
+      <div id="user-virhe" class="msg msg-error" style="display:none"></div>
+      <div id="user-ok" class="msg msg-ok" style="display:none"></div>
+      <div class="row" style="gap:8px;align-items:flex-end;margin-bottom:16px">
+        <div class="field" style="flex:1;margin-bottom:0">
+          <label>Nimi</label>
+          <input type="text" id="uusi-user-nimi" placeholder="Etunimi Sukunimi">
+        </div>
+        <button class="btn btn-primary" style="margin-bottom:0;height:44px" onclick="luoUser()">Luo</button>
+      </div>
+      <div id="user-lista"></div>
+    </div>
+
+    <hr class="divider">
+
     <div class="card">
       <div class="card-title">Luo uusi admin-tunnus</div>
       <div id="admin-virhe" class="msg msg-error" style="display:none"></div>
@@ -111,12 +128,6 @@ async function kirjaudu() {
   naytaDashboard();
 }
 
-function naytaDashboard() {
-  document.getElementById("kirjautuminen").style.display="none";
-  document.getElementById("dashboard").style.display="block";
-  document.getElementById("logout-wrap").style.display="flex";
-}
-
 function kirjauduUlos() { localStorage.removeItem("admin_token"); location.reload(); }
 
 async function luoAdmin() {
@@ -130,6 +141,65 @@ async function luoAdmin() {
   if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
   okDiv.textContent="Admin-tunnus luotu!"; okDiv.style.display="flex";
   document.getElementById("uusi-kayttajanimi").value=""; document.getElementById("uusi-salasana").value="";
+}
+
+async function lataaUsers() {
+  const res = await fetch("/api/users", { headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  if (!res.ok) return;
+  const users = await res.json();
+  const lista = document.getElementById("user-lista");
+  if (!users.length) { lista.innerHTML = '<div class="msg msg-ok" style="display:flex">Ei käyttäjiä.</div>'; return; }
+  lista.innerHTML = "";
+  users.forEach(u => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style = "justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)";
+    const badge = u.salasana_asetettu
+      ? '<span class="badge badge-green">salasana asetettu</span>'
+      : '<span class="badge badge-orange">ei salasanaa</span>';
+    row.innerHTML = `
+      <span style="font-weight:600">${u.nimi} ${badge}</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-xs" onclick="nollaaSalasana(${u.id},'${u.nimi.replace(/'/g,"\\'")}')">Nollaa salasana</button>
+        <button class="btn btn-danger btn-xs" onclick="poistaUser(${u.id},'${u.nimi.replace(/'/g,"\\'")}')">Poista</button>
+      </div>
+    `;
+    lista.appendChild(row);
+  });
+}
+
+async function luoUser() {
+  const nimi = document.getElementById("uusi-user-nimi").value.trim();
+  const virhe = document.getElementById("user-virhe");
+  const okDiv = document.getElementById("user-ok");
+  virhe.style.display="none"; okDiv.style.display="none";
+  if (!nimi) { virhe.textContent="Syötä nimi."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/user", { method:"POST", headers:{"Content-Type":"application/json","x-admin-token":localStorage.getItem("admin_token")}, body:JSON.stringify({nimi}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  okDiv.textContent="Käyttäjä luotu!"; okDiv.style.display="flex";
+  document.getElementById("uusi-user-nimi").value="";
+  await lataaUsers();
+}
+
+async function nollaaSalasana(id, nimi) {
+  if (!confirm(`Nollaa salasana käyttäjältä "${nimi}"?\nSeuraavalla kirjautumisella hän valitsee uuden salasanan.`)) return;
+  const res = await fetch(`/api/user/${id}/reset_salasana`, { method:"POST", headers:{"x-admin-token":localStorage.getItem("admin_token")} });
+  if (!res.ok) { alert("Virhe salasanan nollauksessa."); return; }
+  await lataaUsers();
+}
+
+async function poistaUser(id, nimi) {
+  if (!confirm(`Poistetaanko käyttäjä "${nimi}"?`)) return;
+  const res = await fetch(`/api/user/${id}`, { method:"DELETE", headers:{"x-admin-token":localStorage.getItem("admin_token")} });
+  if (!res.ok) { alert("Virhe poistamisessa."); return; }
+  await lataaUsers();
+}
+
+function naytaDashboard() {
+  document.getElementById("kirjautuminen").style.display="none";
+  document.getElementById("dashboard").style.display="block";
+  document.getElementById("logout-wrap").style.display="flex";
+  lataaUsers();
 }
 
 if (localStorage.getItem("admin_token")) naytaDashboard();

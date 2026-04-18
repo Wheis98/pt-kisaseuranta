@@ -92,6 +92,10 @@ function naytaQR(vartio) {
   document.getElementById("tulos").style.display="block";
 }
 
+function tulostaQR(v) {
+  naytaQR(v);
+}
+
 function uusiVartio() {
   document.getElementById("nimi").value=""; document.getElementById("jasenet").value="";
   const btn=document.getElementById("btn"); btn.disabled=false; btn.textContent="Luo vartio";
@@ -114,6 +118,7 @@ async function lataaLista() {
         <div class="list-item-name">${v.nimi}</div>
         <div class="list-item-meta">${v.jasenet} jäsentä</div>
       </div>
+      <button class="btn btn-ghost btn-xs" onclick='tulostaQR(${JSON.stringify(v)})'>QR</button>
       <button class="btn btn-danger btn-xs" onclick="poista(${v.id})">Poista</button>
     `;
     div.appendChild(item);

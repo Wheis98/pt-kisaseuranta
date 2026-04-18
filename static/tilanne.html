@@ -45,7 +45,11 @@ function muotoileAika(a) {
 
 function metaTeksti(v) {
   if (v.status==="rastilla_oma") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
-  if (v.status==="tulossa") return v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika)+(v.arvioitu_saapuminen ? " · saapuu ~"+v.arvioitu_saapuminen : "");
+  if (v.status==="tulossa") {
+    let s = v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika);
+    if (v.arvioitu_saapuminen) s += " · saapuu ~"+v.arvioitu_saapuminen+(v.siirtyma_lahde==="mediaani" ? " 📊" : " (arvio)");
+    return s;
+  }
   if (v.status==="rastilla_muu") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
   if (v.status==="matkalla") return v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika);
   return v.jasenet+" jäsentä";

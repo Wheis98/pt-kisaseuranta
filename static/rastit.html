@@ -69,9 +69,12 @@ function adminHeaders() { return { "Content-Type":"application/json", "x-admin-t
 let rastit = [];
 let dragSrcIdx = null;
 
+let mediaanit = {};
+
 async function lataaRastit() {
-  const res = await fetch("/api/rastit");
-  rastit = await res.json();
+  const [rRes, mRes] = await Promise.all([fetch("/api/rastit"), fetch("/api/siirtyma_mediaanit")]);
+  rastit = await rRes.json();
+  mediaanit = await mRes.json();
   renderLista();
 }
 
@@ -97,9 +100,15 @@ function renderLista() {
     ul.appendChild(li);
 
     if (i < rastit.length-1) {
+      const seuraava = rastit[i+1];
+      const key = r.numero + "→" + seuraava.numero;
+      const med = mediaanit[key];
+      const medTeksti = med && med.n >= 2
+        ? `<span class="badge badge-green" style="margin-left:6px">mediaani ${med.mediaani} min (${med.n} kpl)</span>`
+        : `<span class="badge badge-gray" style="margin-left:6px">ei dataa</span>`;
       const sr = document.createElement("div");
       sr.className="siirtyma-row"; sr.id="siirtyma-"+r.id;
-      sr.innerHTML=`↓ siirtymä: <input type="number" value="${r.siirtyma_min}" min="1" id="s-${r.id}"> min <button class="btn btn-ghost btn-xs" onclick="tallennaSiirtyma(${r.id},${i})">Tallenna</button>`;
+      sr.innerHTML=`↓ arvio: <input type="number" value="${r.siirtyma_min}" min="1" id="s-${r.id}"> min <button class="btn btn-ghost btn-xs" onclick="tallennaSiirtyma(${r.id},${i})">Tallenna</button> ${medTeksti}`;
       ul.appendChild(sr);
     }
   });

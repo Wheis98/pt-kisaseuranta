@@ -16,16 +16,43 @@
 
 <div class="container">
   <div class="card" style="margin-top:32px">
-    <div class="card-title">Kirjaudu sisään</div>
+    <div class="card-title" id="otsikko">Kirjaudu sisään</div>
 
     <div id="virhe" class="msg msg-error" style="display:none"></div>
 
-    <div class="field">
-      <label for="nimi">Nimi</label>
-      <input type="text" id="nimi" placeholder="Etunimi Sukunimi" autocomplete="name">
+    <!-- Vaihe 1: nimi -->
+    <div id="vaihe-nimi">
+      <div class="field">
+        <label for="nimi">Nimi</label>
+        <input type="text" id="nimi" placeholder="Etunimi Sukunimi" autocomplete="name">
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-jatka" onclick="tarkistaNimi()">Jatka →</button>
     </div>
 
-    <button class="btn btn-primary btn-block" id="btn" onclick="tallenna()">Jatka →</button>
+    <!-- Vaihe 2a: kirjautuminen salasanalla -->
+    <div id="vaihe-salasana" style="display:none">
+      <div class="field">
+        <label for="salasana">Salasana</label>
+        <input type="password" id="salasana" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-kirjaudu" onclick="kirjaudu()">Kirjaudu →</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:6px" onclick="takaisin()">← Vaihda nimi</button>
+    </div>
+
+    <!-- Vaihe 2b: aseta salasana ensimmäistä kertaa -->
+    <div id="vaihe-aseta" style="display:none">
+      <p style="font-size:.88rem;color:var(--muted);margin:0 0 14px">Tervetuloa! Valitse salasana tunnuksellesi.</p>
+      <div class="field">
+        <label for="uusi-salasana">Valitse salasana</label>
+        <input type="password" id="uusi-salasana" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="uusi-salasana2">Salasana uudelleen</label>
+        <input type="password" id="uusi-salasana2" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-aseta" onclick="asetaSalasana()">Aseta salasana →</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:6px" onclick="takaisin()">← Vaihda nimi</button>
+    </div>
   </div>
 
   <div class="link-group">
@@ -34,17 +61,64 @@
 </div>
 
 <script>
-async function tallenna() {
+let kirjautumiNimi = "";
+
+function naytaVirhe(teksti) {
+  const el = document.getElementById("virhe");
+  el.textContent = teksti;
+  el.style.display = "flex";
+}
+function piilotaVirhe() {
+  document.getElementById("virhe").style.display = "none";
+}
+
+function takaisin() {
+  piilotaVirhe();
+  document.getElementById("vaihe-nimi").style.display = "block";
+  document.getElementById("vaihe-salasana").style.display = "none";
+  document.getElementById("vaihe-aseta").style.display = "none";
+  document.getElementById("otsikko").textContent = "Kirjaudu sisään";
+  document.getElementById("nimi").focus();
+}
+
+async function tarkistaNimi() {
   const nimi = document.getElementById("nimi").value.trim();
-  const virhe = document.getElementById("virhe");
-  const btn = document.getElementById("btn");
-  virhe.style.display = "none";
-  if (!nimi) { virhe.textContent = "Syötä nimi."; virhe.style.display = "flex"; return; }
-  btn.disabled = true; btn.textContent = "Tallennetaan…";
+  piilotaVirhe();
+  if (!nimi) { naytaVirhe("Syötä nimi."); return; }
+  const btn = document.getElementById("btn-jatka");
+  btn.disabled = true; btn.textContent = "Tarkistetaan…";
   try {
-    const res = await fetch("/api/user", {
+    const res = await fetch("/api/user/tarkista?nimi=" + encodeURIComponent(nimi));
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+    kirjautumiNimi = nimi;
+    document.getElementById("vaihe-nimi").style.display = "none";
+    if (data.salasana_asetettu) {
+      document.getElementById("otsikko").textContent = "Hei, " + nimi + "!";
+      document.getElementById("vaihe-salasana").style.display = "block";
+      document.getElementById("salasana").focus();
+    } else {
+      document.getElementById("otsikko").textContent = "Aseta salasana";
+      document.getElementById("vaihe-aseta").style.display = "block";
+      document.getElementById("uusi-salasana").focus();
+    }
+  } catch(e) {
+    naytaVirhe(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Jatka →";
+  }
+}
+
+async function kirjaudu() {
+  const salasana = document.getElementById("salasana").value;
+  piilotaVirhe();
+  if (!salasana) { naytaVirhe("Syötä salasana."); return; }
+  const btn = document.getElementById("btn-kirjaudu");
+  btn.disabled = true; btn.textContent = "Kirjaudutaan…";
+  try {
+    const res = await fetch("/api/login", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nimi }),
+      body: JSON.stringify({ nimi: kirjautumiNimi, salasana }),
     });
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
     const data = await res.json();
@@ -52,11 +126,41 @@ async function tallenna() {
     localStorage.setItem("nimi", data.nimi);
     window.location.href = "rasti.html";
   } catch(e) {
-    virhe.textContent = e.message; virhe.style.display = "flex";
-    btn.disabled = false; btn.textContent = "Jatka →";
+    naytaVirhe(e.message);
+    btn.disabled = false; btn.textContent = "Kirjaudu →";
   }
 }
-document.addEventListener("keydown", e => { if (e.key === "Enter") tallenna(); });
+
+async function asetaSalasana() {
+  const s1 = document.getElementById("uusi-salasana").value;
+  const s2 = document.getElementById("uusi-salasana2").value;
+  piilotaVirhe();
+  if (!s1) { naytaVirhe("Syötä salasana."); return; }
+  if (s1 !== s2) { naytaVirhe("Salasanat eivät täsmää."); return; }
+  const btn = document.getElementById("btn-aseta");
+  btn.disabled = true; btn.textContent = "Tallennetaan…";
+  try {
+    const res = await fetch("/api/user/aseta_salasana", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nimi: kirjautumiNimi, salasana: s1 }),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("nimi", data.nimi);
+    window.location.href = "rasti.html";
+  } catch(e) {
+    naytaVirhe(e.message);
+    btn.disabled = false; btn.textContent = "Aseta salasana →";
+  }
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  if (document.getElementById("vaihe-nimi").style.display !== "none") tarkistaNimi();
+  else if (document.getElementById("vaihe-salasana").style.display !== "none") kirjaudu();
+  else if (document.getElementById("vaihe-aseta").style.display !== "none") asetaSalasana();
+});
 </script>
 </body>
 </html>
