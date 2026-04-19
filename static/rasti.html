@@ -12,6 +12,32 @@
     <span class="header-title">Kipa</span>
     <span class="header-sub" id="kayttaja-info"></span>
   </div>
+  <div class="header-right">
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Rastin valinta — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Valitse rasti</h3>
+      <ul>
+        <li>Valitse listasta se rasti, jolla sinä olet töissä tänään.</li>
+        <li>Rastilla näkyvät kesto ja arvioitu siirtymäaika seuraavalle rastille.</li>
+      </ul>
+      <h3>Rastin vaihto</h3>
+      <ul>
+        <li>Voit vaihtaa rastia myöhemmin leimaus-sivun oikeasta yläkulmasta (<strong>Vaihda rastia</strong>).</li>
+      </ul>
+      <h3>Ei rasteja listassa?</h3>
+      <ul>
+        <li>Pyydä adminia luomaan rastit hallintapaneelista.</li>
+      </ul>
+    </div>
+  </div>
 </div>
 
 <div class="container">
@@ -55,6 +81,9 @@ async function lataaRastit() {
     div.appendChild(btn);
   });
 }
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 lataaRastit();
 </script>
 </body>

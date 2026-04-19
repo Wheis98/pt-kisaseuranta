@@ -21,6 +21,32 @@
     <button class="btn btn-white btn-sm" onclick="lataa()">Päivitä</button>
     <button class="btn btn-white btn-sm" onclick="exportCSV()">CSV ↓</button>
     <a href="leimaus.html" class="btn btn-white btn-sm">← Takaisin</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Leimausdata — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Mitä näkymä kertoo</h3>
+      <ul>
+        <li>Näyttää kaikki leimaukset uusimmasta vanhimpaan.</li>
+        <li>Käytetään tarkistamiseen ja virheiden havaitsemiseen.</li>
+      </ul>
+      <h3>Toiminnot</h3>
+      <ul>
+        <li><strong>Päivitä</strong> — hakee uusimman datan palvelimelta.</li>
+        <li><strong>CSV ↓</strong> — lataa kaikki leimaukset Excel-yhteensopivana tiedostona.</li>
+      </ul>
+      <h3>Värit</h3>
+      <ul>
+        <li>🟢 <strong>Sisään</strong> — vartio saapui rastille.</li>
+        <li>🔴 <strong>Ulos</strong> — vartio lähti rastilta.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -86,6 +112,9 @@ function exportCSV() {
   a.download="leimaukset.csv"; a.click();
 }
 
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 lataa();
 </script>
 </body>

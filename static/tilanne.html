@@ -14,6 +14,35 @@
   </div>
   <div class="header-right">
     <a href="leimaus.html" class="btn btn-white btn-sm">← Leimaus</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Tilanne — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Mitä näkymä kertoo</h3>
+      <ul>
+        <li>Näyttää kaikkien vartioiden sijainnin suhteessa omaan rastiisi.</li>
+        <li>Päivittyy automaattisesti 30 sekunnin välein.</li>
+      </ul>
+      <h3>Värikoodit</h3>
+      <ul>
+        <li>🟢 <strong>Rastillasi</strong> — vartio on nyt omalla rastillasi.</li>
+        <li>🟠 <strong>Tulossa</strong> — vartio lähti edelliseltä rastilta, saapuu pian.</li>
+        <li>🔵 <strong>Muualla</strong> — vartio on jollakin muulla rastilla.</li>
+        <li>⚫ <strong>Matkalla</strong> — vartio on liikkeessä, ei tiedossa minne.</li>
+        <li>– <strong>Ei aloitettu</strong> — vartiolla ei ole yhtään leimausta.</li>
+      </ul>
+      <h3>Saapumisaika</h3>
+      <ul>
+        <li>📊-merkki = arvio perustuu toteutuneeseen mediaaniaikaan.</li>
+        <li>(arvio) = käytetään manuaalisesti asetettua siirtymäaikaa.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -89,6 +118,9 @@ async function paivita() {
   document.getElementById("paivitys").textContent = "Päivitetty "+new Date().toLocaleTimeString("fi-FI",{hour:"2-digit",minute:"2-digit"});
 }
 
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 paivita();
 setInterval(paivita, 30000);
 </script>

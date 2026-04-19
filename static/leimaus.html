@@ -24,6 +24,36 @@
   </div>
   <div class="header-right">
     <a href="rasti.html" class="btn btn-white btn-sm">Vaihda rastia</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Leimaus — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Leimaus-välilehti</h3>
+      <ul>
+        <li><strong>Rastilla nyt</strong> — vartiot jotka ovat tällä hetkellä sisäänleimattuna rastillesi.</li>
+        <li>Paina <strong>Ulos</strong> kun vartio lähtee rastilta.</li>
+        <li><strong>QR-koodi</strong> — skannaa vartion QR-koodi, jolloin nimi ja jäsenmäärä täyttyvät automaattisesti.</li>
+        <li><strong>Manuaalinen</strong> — kirjoita vartion nimi käsin autocomplete-haulla.</li>
+        <li>Tarkista jäsenmäärä ja paina <strong>Tallenna leimaus</strong>.</li>
+      </ul>
+      <h3>Tilanne-välilehti</h3>
+      <ul>
+        <li>Näyttää kaikkien vartioiden sijainnin suhteessa rastillesi.</li>
+        <li>🟢 Rastillasi — 🟠 Tulossa — 🔵 Muualla — ⚫ Matkalla</li>
+        <li>📊-merkki tarkoittaa että saapumisaika perustuu toteutuneeseen mediaaniin.</li>
+      </ul>
+      <h3>Tulossa pian -ilmoitus</h3>
+      <ul>
+        <li>Näkyy automaattisesti kun vartio on alle 5 minuutin päässä.</li>
+        <li>Punainen aika = vartio on myöhässä yli 10 minuuttia.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -111,6 +141,10 @@ let vartioData = [];
 let acValittu = -1;
 
 function aikaleima() { return new Date().toLocaleString("fi-FI"); }
+
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 // ── Välilehdet ──
 function vaihdaTab(nimi) {

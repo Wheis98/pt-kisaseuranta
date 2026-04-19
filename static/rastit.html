@@ -27,6 +27,38 @@
   </div>
   <div class="header-right">
     <a href="admin.html" class="btn btn-white btn-sm">← Admin</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Rastien hallinta — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Rastien luominen</h3>
+      <ul>
+        <li>Syötä rastin numero/nimi ja paina <strong>Lisää rasti</strong>.</li>
+        <li>Kesto = kuinka kauan vartio on rastilla (minuuteissa).</li>
+        <li>Siirtymäarvio = arvioitu aika seuraavalle rastille siirtymiseen.</li>
+      </ul>
+      <h3>Järjestys</h3>
+      <ul>
+        <li>Raahaa rasteja oikeaan kierrosjärjestykseen — järjestys tallennetaan automaattisesti.</li>
+        <li>Järjestys vaikuttaa "Tulossa"-ennusteeseen leimaussivulla.</li>
+      </ul>
+      <h3>Siirtymämediaani</h3>
+      <ul>
+        <li>📊-merkki näyttää toteutuneen mediaaniajan rasti-parille.</li>
+        <li>Kun havaintoja on vähintään 2, mediaania käytetään automaattisesti ennusteessa.</li>
+      </ul>
+      <h3>Muokkaus ja poisto</h3>
+      <ul>
+        <li>Paina <strong>Muokkaa</strong> rastin nimen tai aikojen muuttamiseksi.</li>
+        <li>Paina <strong>Poista</strong> rastin poistamiseksi.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -127,6 +159,10 @@ async function tallennaSiirtyma(id, idx) {
   const btn = document.querySelector("#siirtyma-"+id+" button");
   btn.textContent="✓"; setTimeout(()=>{ btn.textContent="Tallenna"; },1500);
 }
+
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 function avaMuokkaus(idx) {
   document.querySelectorAll(".muokkaus-row").forEach(el=>el.remove());

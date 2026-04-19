@@ -12,6 +12,33 @@
     <span class="header-title">Kipa</span>
     <span class="header-sub">Kisaseuranta</span>
   </div>
+  <div class="header-right">
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Kirjautuminen — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Kirjautuminen</h3>
+      <ul>
+        <li>Kirjoita nimesi ja paina <strong>Jatka</strong>.</li>
+        <li>Jos nimesi ei löydy, pyydä adminia luomaan sinulle tunnus.</li>
+      </ul>
+      <h3>Ensimmäinen kirjautuminen</h3>
+      <ul>
+        <li>Valitse itsellesi salasana — kirjoita se kahteen kertaan ja paina <strong>Aseta salasana</strong>.</li>
+        <li>Salasana kysytään myös jos admin on nollannut sen.</li>
+      </ul>
+      <h3>Normaali kirjautuminen</h3>
+      <ul>
+        <li>Kirjoita nimesi → syötä salasanasi → paina <strong>Kirjaudu</strong>.</li>
+      </ul>
+    </div>
+  </div>
 </div>
 
 <div class="container">
@@ -154,6 +181,10 @@ async function asetaSalasana() {
     btn.disabled = false; btn.textContent = "Aseta salasana →";
   }
 }
+
+function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
+function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 document.addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
