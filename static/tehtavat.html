@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Tehtävät</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .tehtava-item { background:var(--card); border:1.5px solid var(--border); border-radius:10px; padding:13px 14px; margin-bottom:4px; display:flex; align-items:center; gap:10px; }
+    .tehtava-nimi { font-weight:700; flex:1; }
+    .tehtava-tyyppi-badge { font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:12px; }
+    .tyyppi-pisteet { background:#ede9fe; color:#5b21b6; }
+    .tyyppi-oikein_vaarin { background:#dcfce7; color:#166534; }
+    .tyyppi-ajanotto { background:#dbeafe; color:#1e40af; }
+    .osatehtava-item { background:#f8fafc; border:1.5px solid var(--border); border-radius:8px; padding:10px 13px; margin:4px 0 4px 24px; display:flex; align-items:center; gap:10px; }
+    .lisaa-osa-btn { margin-left:24px; margin-top:4px; margin-bottom:8px; }
+    .edit-row { background:#f0f4ff; border:1.5px solid var(--primary); border-radius:8px; padding:10px 13px; margin-bottom:4px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+    .edit-row input, .edit-row select { padding:7px 10px; font-size:.88rem; border:1.5px solid var(--border); border-radius:6px; background:white; }
+    .edit-row input[type=text] { flex:2; min-width:100px; }
+    .edit-row input[type=number] { width:80px; }
+    .edit-row select { flex:1; min-width:120px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title" id="otsikko">Tehtävät</span>
+    <span class="header-sub" id="rasti-sub"></span>
+  </div>
+  <div class="header-right">
+    <a href="rastit.html" class="btn btn-white btn-sm">← Rastit</a>
+  </div>
+</div>
+
+<div class="container-wide">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Lisää tehtävä</div>
+    <div id="virhe" class="msg msg-error" style="display:none"></div>
+    <div class="edit-row" style="background:white;border:none;padding:0">
+      <input type="text" id="uusi-nimi" placeholder="Tehtävän nimi" style="flex:2;min-width:120px">
+      <select id="uusi-tyyppi" style="flex:1;min-width:130px;padding:9px 10px;border:1.5px solid var(--border);border-radius:6px">
+        <option value="pisteet">Pisteet</option>
+        <option value="oikein_vaarin">Oikein/Väärin</option>
+        <option value="ajanotto">Ajanotto</option>
+      </select>
+      <input type="number" id="uusi-max" placeholder="Max p" min="0" step="0.5" style="width:90px">
+      <button class="btn btn-primary" style="height:40px" onclick="lisaaTehtava()">Lisää</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Tehtävät <span style="font-weight:400;font-size:.78rem;color:var(--muted);text-transform:none;letter-spacing:0">— osatehtävät näkyvät sisennettynä</span></div>
+    <div id="tehtava-lista"></div>
+    <div id="tyhja" class="msg msg-ok" style="display:none">Ei tehtäviä vielä.</div>
+  </div>
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "Content-Type":"application/json", "x-admin-token":adminToken }; }
+
+const params = new URLSearchParams(location.search);
+const rastiId = parseInt(params.get("rasti_id"));
+if (!rastiId) window.location.href = "/rastit.html";
+
+let tehtavat = [];
+let editingId = null;
+
+async function lataaTehtavat() {
+  const [tRes, rRes] = await Promise.all([fetch(`/api/tehtavat?rasti_id=${rastiId}`), fetch("/api/rastit")]);
+  tehtavat = await tRes.json();
+  const rastit = await rRes.json();
+  const rasti = rastit.find(r => r.id === rastiId);
+  if (rasti) {
+    document.getElementById("otsikko").textContent = `Rasti ${rasti.numero} — Tehtävät`;
+    document.getElementById("rasti-sub").textContent = `${rasti.kesto_min} min`;
+  }
+  renderLista();
+}
+
+function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto'}[t]||t; }
+function tyyppiClass(t) { return 'tehtava-tyyppi-badge tyyppi-'+t; }
+
+function renderLista() {
+  const lista = document.getElementById("tehtava-lista");
+  const tyhja = document.getElementById("tyhja");
+  lista.innerHTML = "";
+  if (!tehtavat.length) { tyhja.style.display="flex"; return; }
+  tyhja.style.display = "none";
+
+  tehtavat.forEach((t, i) => {
+    const item = document.createElement("div");
+    item.innerHTML = `
+      <div class="tehtava-item">
+        <span class="tehtava-nimi">${t.nimi}</span>
+        <span class="${tyyppiClass(t.tyyppi)}">${tyyppiLabel(t.tyyppi)}</span>
+        ${t.max_pisteet !== null ? `<span style="font-size:.8rem;color:var(--muted)">max ${t.max_pisteet} p</span>` : ''}
+        <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus('tehtava',${t.id},${i})">Muokkaa</button>
+        <button class="btn btn-danger btn-xs" onclick="poistaTehtava(${t.id})">Poista</button>
+      </div>
+    `;
+    lista.appendChild(item);
+
+    t.osatehtavat.forEach((o, oi) => {
+      const osa = document.createElement("div");
+      osa.innerHTML = `
+        <div class="osatehtava-item">
+          <span style="color:var(--muted);font-size:.85rem">↳</span>
+          <span class="tehtava-nimi">${o.nimi}</span>
+          <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
+          ${o.max_pisteet !== null ? `<span style="font-size:.8rem;color:var(--muted)">max ${o.max_pisteet} p</span>` : ''}
+          <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus('osatehtava',${o.id},${i},${oi})">Muokkaa</button>
+          <button class="btn btn-danger btn-xs" onclick="poistaOsatehtava(${o.id})">Poista</button>
+        </div>
+      `;
+      lista.appendChild(osa);
+    });
+
+    const lisaaOsa = document.createElement("div");
+    lisaaOsa.className = "lisaa-osa-btn";
+    lisaaOsa.innerHTML = `<button class="btn btn-ghost btn-xs" onclick="avaaLisaaOsa(${t.id})">+ Lisää osatehtävä</button>`;
+    lista.appendChild(lisaaOsa);
+  });
+}
+
+function avaMuokkaus(kohde, id, idx, osaIdx) {
+  document.querySelectorAll(".edit-row.inline").forEach(el => el.remove());
+  const t = kohde === 'tehtava' ? tehtavat[idx] : tehtavat[idx].osatehtavat[osaIdx];
+  const container = document.getElementById("tehtava-lista");
+  const items = container.querySelectorAll(kohde === 'tehtava' ? '.tehtava-item' : '.osatehtava-item');
+  const targetItem = kohde === 'tehtava' ? items[idx] : Array.from(items).find(el => el.querySelector(`[onclick*="poista${kohde === 'tehtava' ? 'Tehtava' : 'Osatehtava'}(${id})"]`));
+  if (!targetItem) return;
+
+  const row = document.createElement("div");
+  row.className = "edit-row inline";
+  row.innerHTML = `
+    <input type="text" id="m-nimi-${id}" value="${t.nimi}" placeholder="Nimi">
+    <select id="m-tyyppi-${id}" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
+      <option value="pisteet" ${t.tyyppi==='pisteet'?'selected':''}>Pisteet</option>
+      <option value="oikein_vaarin" ${t.tyyppi==='oikein_vaarin'?'selected':''}>Oikein/Väärin</option>
+      <option value="ajanotto" ${t.tyyppi==='ajanotto'?'selected':''}>Ajanotto</option>
+    </select>
+    <input type="number" id="m-max-${id}" value="${t.max_pisteet ?? ''}" placeholder="Max p" min="0" step="0.5">
+    <button class="btn btn-success btn-xs" onclick="tallennaMuokkaus('${kohde}',${id},${idx}${osaIdx!==undefined?','+osaIdx:''})">Tallenna</button>
+    <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+  `;
+  const parentEl = targetItem.closest(".tehtava-item, .osatehtava-item");
+  if (parentEl) parentEl.parentElement.insertAdjacentElement("afterend", row);
+}
+
+async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
+  const nimi = document.getElementById(`m-nimi-${id}`).value.trim();
+  const tyyppi = document.getElementById(`m-tyyppi-${id}`).value;
+  const maxVal = document.getElementById(`m-max-${id}`).value;
+  const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  if (!nimi) return;
+
+  const body = kohde === 'tehtava'
+    ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet }
+    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet };
+  const url = kohde === 'tehtava' ? `/api/tehtava/${id}` : `/api/osatehtava/${id}`;
+  await fetch(url, { method:"PUT", headers:adminHeaders(), body:JSON.stringify(body) });
+  await lataaTehtavat();
+}
+
+function avaaLisaaOsa(tehtavaId) {
+  document.querySelectorAll(".edit-row.inline").forEach(el => el.remove());
+  const btns = document.querySelectorAll(".lisaa-osa-btn");
+  const idx = tehtavat.findIndex(t => t.id === tehtavaId);
+  if (idx < 0) return;
+
+  const row = document.createElement("div");
+  row.className = "edit-row inline";
+  row.style.marginLeft = "24px";
+  row.innerHTML = `
+    <input type="text" id="osa-nimi-${tehtavaId}" placeholder="Osatehtävän nimi">
+    <select id="osa-tyyppi-${tehtavaId}" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
+      <option value="pisteet">Pisteet</option>
+      <option value="oikein_vaarin">Oikein/Väärin</option>
+      <option value="ajanotto">Ajanotto</option>
+    </select>
+    <input type="number" id="osa-max-${tehtavaId}" placeholder="Max p" min="0" step="0.5">
+    <button class="btn btn-success btn-xs" onclick="lisaaOsatehtava(${tehtavaId})">Lisää</button>
+    <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+  `;
+  btns[idx].insertAdjacentElement("beforebegin", row);
+}
+
+async function lisaaOsatehtava(tehtavaId) {
+  const nimi = document.getElementById(`osa-nimi-${tehtavaId}`).value.trim();
+  const tyyppi = document.getElementById(`osa-tyyppi-${tehtavaId}`).value;
+  const maxVal = document.getElementById(`osa-max-${tehtavaId}`).value;
+  const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  if (!nimi) return;
+  await fetch("/api/osatehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({tehtava_id:tehtavaId,nimi,tyyppi,max_pisteet}) });
+  await lataaTehtavat();
+}
+
+async function lisaaTehtava() {
+  const nimi = document.getElementById("uusi-nimi").value.trim();
+  const tyyppi = document.getElementById("uusi-tyyppi").value;
+  const maxVal = document.getElementById("uusi-max").value;
+  const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  const virhe = document.getElementById("virhe");
+  virhe.style.display = "none";
+  if (!nimi) { virhe.textContent="Syötä tehtävän nimi."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/tehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({rasti_id:rastiId,nimi,tyyppi,max_pisteet}) });
+  if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
+  document.getElementById("uusi-nimi").value=""; document.getElementById("uusi-max").value="";
+  await lataaTehtavat();
+}
+
+async function poistaTehtava(id) {
+  if (!confirm("Poistetaanko tehtävä ja sen osatehtavat?")) return;
+  await fetch(`/api/tehtava/${id}`, { method:"DELETE", headers:adminHeaders() });
+  await lataaTehtavat();
+}
+
+async function poistaOsatehtava(id) {
+  if (!confirm("Poistetaanko osatehtävä?")) return;
+  await fetch(`/api/osatehtava/${id}`, { method:"DELETE", headers:adminHeaders() });
+  await lataaTehtavat();
+}
+
+document.addEventListener("keydown", e => { if (e.key==="Enter") lisaaTehtava(); });
+lataaTehtavat();
+</script>
+</body>
+</html>

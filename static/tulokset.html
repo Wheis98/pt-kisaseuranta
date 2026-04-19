@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Tulokset</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .vartio-selector { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+    .vartio-btn { padding:8px 14px; border:1.5px solid var(--border); border-radius:8px; background:white; font-size:.88rem; font-weight:600; cursor:pointer; transition:all .12s; }
+    .vartio-btn.active { border-color:var(--primary); background:#eef2ff; color:var(--primary); }
+    .rasti-block { margin-bottom:16px; }
+    .rasti-block-title { font-weight:700; font-size:.95rem; padding:8px 12px; background:#f1f5f9; border-radius:8px 8px 0 0; border:1.5px solid var(--border); border-bottom:none; display:flex; justify-content:space-between; }
+    .tehtava-row { display:flex; align-items:center; padding:9px 12px; border:1.5px solid var(--border); border-top:none; font-size:.88rem; gap:8px; }
+    .tehtava-row:last-child { border-radius:0 0 8px 8px; }
+    .tehtava-row.osa { padding-left:28px; background:#fafbff; }
+    .tehtava-row.total-row { background:#f0fdf4; font-weight:700; border-top:2px solid var(--border); }
+    .t-nimi { flex:1; }
+    .t-score { min-width:80px; text-align:right; font-weight:600; }
+    .t-max { min-width:60px; text-align:right; color:var(--muted); font-size:.82rem; }
+    .score-ok { color:var(--success); }
+    .score-no { color:var(--danger); }
+    .grand-total { background:var(--primary); color:white; border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:1rem; margin-top:8px; }
+    .kommentti-row { font-size:.8rem; color:var(--muted); padding:6px 12px; border:1.5px solid var(--border); border-top:none; font-style:italic; }
+    select { padding:10px 14px; font-size:.95rem; border:1.5px solid var(--border); border-radius:8px; background:white; width:100%; }
+    select:focus { outline:none; border-color:var(--primary); }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Tulokset</span>
+  </div>
+  <div class="header-right">
+    <a href="admin.html" class="btn btn-white btn-sm">← Admin</a>
+  </div>
+</div>
+
+<div class="container-wide">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Valitse vartio</div>
+    <div id="vartio-lista" class="vartio-selector"></div>
+    <div id="ei-vartioita" class="msg msg-ok" style="display:none">Ei suorituksia vielä.</div>
+  </div>
+
+  <div id="tulos-osio" style="display:none">
+    <div id="tulos-lista"></div>
+  </div>
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "x-admin-token": adminToken }; }
+
+let kaikkiTulokset = [];
+let valittuVartio = null;
+
+function sToAika(s) {
+  if (s === null || s === undefined) return "–";
+  const min = Math.floor(s / 60), sek = Math.round(s % 60);
+  return `${String(min).padStart(2,'0')}:${String(sek).padStart(2,'0')}`;
+}
+
+function laskePisteet(t) {
+  if (t.tyyppi === 'oikein_vaarin') {
+    if (t.oikein === null || t.oikein === undefined) return null;
+    return t.oikein ? (t.max_pisteet ?? 1) : 0;
+  }
+  return t.pisteet ?? null;
+}
+
+function formatScore(t) {
+  if (t.tyyppi === 'oikein_vaarin') {
+    if (t.oikein === null || t.oikein === undefined) return '<span style="color:var(--muted)">–</span>';
+    return t.oikein
+      ? `<span class="score-ok">✓ Oikein${t.max_pisteet ? ' ('+t.max_pisteet+' p)' : ''}</span>`
+      : `<span class="score-no">✗ Väärin (0 p)</span>`;
+  } else if (t.tyyppi === 'ajanotto') {
+    const aika = t.aika_sekuntia != null ? sToAika(t.aika_sekuntia) : '–';
+    const p = t.pisteet != null ? ` · ${t.pisteet} p` : '';
+    return `${aika}${p}`;
+  } else {
+    return t.pisteet != null ? `${t.pisteet} p` : '<span style="color:var(--muted)">–</span>';
+  }
+}
+
+function naytaVartio(vartio) {
+  valittuVartio = vartio;
+  document.querySelectorAll(".vartio-btn").forEach(b => b.classList.toggle("active", b.dataset.vartio === vartio));
+
+  const data = kaikkiTulokset.find(v => v.vartio === vartio);
+  const osio = document.getElementById("tulos-osio");
+  const lista = document.getElementById("tulos-lista");
+  lista.innerHTML = "";
+  if (!data || !data.rastit.length) {
+    osio.style.display = "none";
+    return;
+  }
+  osio.style.display = "block";
+
+  let grandTotal = 0, grandMax = 0, grandHasAny = false;
+
+  data.rastit.forEach(r => {
+    if (!r.tehtavat.length) return;
+
+    let rastiTotal = 0, rastiMax = 0, rastiHasAny = false;
+
+    const block = document.createElement("div");
+    block.className = "rasti-block";
+
+    let rowsHTML = "";
+    r.tehtavat.forEach(t => {
+      const hasOsa = t.osatehtavat && t.osatehtavat.length > 0;
+      if (hasOsa) {
+        rowsHTML += `<div class="tehtava-row"><span class="t-nimi" style="font-weight:700">${t.nimi}</span><span class="t-score" style="color:var(--muted);font-size:.82rem">osatehtavat ▼</span></div>`;
+        let osaSum = 0, osaMax = 0, osaHas = false;
+        t.osatehtavat.forEach(o => {
+          const p = laskePisteet(o);
+          rowsHTML += `<div class="tehtava-row osa"><span class="t-nimi">${o.nimi}</span><span class="t-score">${formatScore(o)}</span><span class="t-max">${o.max_pisteet !== null ? '/ '+o.max_pisteet : ''}</span></div>`;
+          if (p !== null) { osaSum += p; osaHas = true; }
+          if (o.max_pisteet !== null) osaMax += o.max_pisteet;
+        });
+        rowsHTML += `<div class="tehtava-row osa total-row" style="background:#f0f4ff"><span class="t-nimi">Yhteensä</span><span class="t-score">${osaHas?osaSum+' p':'–'}</span><span class="t-max">${osaMax>0?'/ '+osaMax:''}</span></div>`;
+        if (osaHas) { rastiTotal += osaSum; rastiHasAny = true; }
+        if (osaMax > 0) rastiMax += osaMax;
+      } else {
+        const p = laskePisteet(t);
+        rowsHTML += `<div class="tehtava-row"><span class="t-nimi">${t.nimi}</span><span class="t-score">${formatScore(t)}</span><span class="t-max">${t.max_pisteet !== null ? '/ '+t.max_pisteet : ''}</span></div>`;
+        if (p !== null) { rastiTotal += p; rastiHasAny = true; }
+        if (t.max_pisteet !== null) rastiMax += t.max_pisteet;
+      }
+    });
+
+    const rastiTotalStr = rastiHasAny ? `${rastiTotal} p${rastiMax>0?' / '+rastiMax+' p':''}` : '–';
+    block.innerHTML = `
+      <div class="rasti-block-title"><span>Rasti ${r.rasti_numero}</span><span>${rastiTotalStr}</span></div>
+      ${rowsHTML}
+      ${r.kommentti ? `<div class="kommentti-row">💬 ${r.kommentti}</div>` : ''}
+    `;
+    lista.appendChild(block);
+
+    if (rastiHasAny) { grandTotal += rastiTotal; grandHasAny = true; }
+    if (rastiMax > 0) grandMax += rastiMax;
+  });
+
+  const grand = document.createElement("div");
+  grand.className = "grand-total";
+  grand.innerHTML = `<span>Kokonaistulos</span><span>${grandHasAny ? grandTotal+' p'+(grandMax>0?' / '+grandMax+' p':'') : '–'}</span>`;
+  lista.appendChild(grand);
+}
+
+async function lataa() {
+  const res = await fetch("/api/tulokset", { headers: adminHeaders() });
+  if (res.status === 403) { localStorage.removeItem("admin_token"); location.href="/admin.html"; return; }
+  kaikkiTulokset = await res.json();
+
+  const vartioLista = document.getElementById("vartio-lista");
+  vartioLista.innerHTML = "";
+  if (!kaikkiTulokset.length) {
+    document.getElementById("ei-vartioita").style.display = "flex";
+    return;
+  }
+  document.getElementById("ei-vartioita").style.display = "none";
+  kaikkiTulokset.forEach(v => {
+    const btn = document.createElement("button");
+    btn.className = "vartio-btn";
+    btn.dataset.vartio = v.vartio;
+    btn.textContent = v.vartio;
+    btn.onclick = () => naytaVartio(v.vartio);
+    vartioLista.appendChild(btn);
+  });
+
+  if (kaikkiTulokset.length > 0) naytaVartio(kaikkiTulokset[0].vartio);
+}
+
+lataa();
+</script>
+</body>
+</html>

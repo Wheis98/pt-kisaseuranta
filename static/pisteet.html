@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Pisteet</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .tehtava-card { background:var(--card); border:1.5px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:8px; }
+    .tehtava-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+    .tehtava-nimi { font-weight:700; font-size:.97rem; }
+    .tyyppi-badge { font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:12px; flex-shrink:0; }
+    .tyyppi-pisteet { background:#ede9fe; color:#5b21b6; }
+    .tyyppi-oikein_vaarin { background:#dcfce7; color:#166534; }
+    .tyyppi-ajanotto { background:#dbeafe; color:#1e40af; }
+    .oikein-group { display:flex; gap:8px; }
+    .oikein-btn { flex:1; padding:9px; border:2px solid var(--border); border-radius:8px; background:white; font-weight:600; cursor:pointer; font-size:.9rem; transition:all .12s; }
+    .oikein-btn.sel-ok { border-color:var(--success); background:#dcfce7; color:#166534; }
+    .oikein-btn.sel-no { border-color:var(--danger); background:#fee2e2; color:#991b1b; }
+    .score-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .score-row input { padding:8px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:.95rem; }
+    .score-row .score-input { width:90px; }
+    .score-row .aika-input { width:80px; }
+    .max-hint { font-size:.8rem; color:var(--muted); }
+    .osatehtava-block { border-left:3px solid var(--border); padding:8px 0 6px 14px; margin:8px 0 4px; }
+    .osa-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:.9rem; }
+    .osa-nimi { font-weight:600; flex:1; }
+    .parent-total { font-size:.82rem; color:var(--muted); margin-top:8px; padding-top:6px; border-top:1px solid var(--border); text-align:right; }
+    textarea { width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:.9rem; resize:vertical; font-family:inherit; }
+    textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title" id="otsikko">Pisteet</span>
+    <span class="header-sub" id="vartio-info"></span>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-white btn-sm" onclick="takaisin()">← Takaisin</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="lataus" class="msg msg-ok" style="display:flex;margin-top:24px">Ladataan...</div>
+  <div id="tehtavat-lista" style="margin-top:16px;display:none"></div>
+
+  <div class="card" id="kommentti-osio" style="display:none">
+    <div class="card-title">Kommentti rastilta (valinnainen)</div>
+    <textarea id="kommentti" rows="2" placeholder="Vapaamuotoinen huomio..."></textarea>
+  </div>
+
+  <div id="virhe" class="msg msg-error" style="display:none;margin-top:8px"></div>
+  <button class="btn btn-success btn-block" id="tallenna-btn" style="display:none" onclick="tallenna()">Tallenna pisteet</button>
+  <div id="ok-viesti" class="msg msg-ok" style="display:none;margin-top:8px">Pisteet tallennettu!</div>
+</div>
+
+<script>
+const token = localStorage.getItem("token");
+const rastinumero = localStorage.getItem("rastinumero");
+const params = new URLSearchParams(location.search);
+const rastiId = parseInt(params.get("rasti_id"));
+const vartio = params.get("vartio") || "";
+if (!token || !rastiId || !vartio) { window.location.href = "/leimaus.html"; }
+
+document.getElementById("vartio-info").textContent = vartio;
+
+let suoritusId = null;
+let tehtavat = [];
+
+function takaisin() { window.location.href = "leimaus.html"; }
+
+function sToAika(s) {
+  if (s === null || s === undefined || s === "") return "";
+  const min = Math.floor(s / 60), sek = Math.round(s % 60);
+  return `${String(min).padStart(2,'0')}:${String(sek).padStart(2,'0')}`;
+}
+function aikaToS(str) {
+  if (!str || !str.trim()) return null;
+  const p = str.trim().split(":");
+  if (p.length === 2) { const m=parseInt(p[0]),s=parseInt(p[1]); return isNaN(m)||isNaN(s)?null:m*60+s; }
+  const v = parseFloat(str); return isNaN(v) ? null : v;
+}
+
+function tyyppiClass(t) { return 'tyyppi-badge tyyppi-'+t; }
+function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto'}[t]||t; }
+
+function oikeinBtn(id, prefix, existingOikein) {
+  const isO = existingOikein === 1, isV = existingOikein === 0;
+  return `<div class="oikein-group">
+    <button class="oikein-btn ${isO?'sel-ok':''}" id="${prefix}-ok-${id}" onclick="togOikein('${prefix}',${id},1)">✓ Oikein</button>
+    <button class="oikein-btn ${isV?'sel-no':''}" id="${prefix}-no-${id}" onclick="togOikein('${prefix}',${id},0)">✗ Väärin</button>
+  </div>`;
+}
+
+function togOikein(prefix, id, arvo) {
+  const o = document.getElementById(`${prefix}-ok-${id}`);
+  const v = document.getElementById(`${prefix}-no-${id}`);
+  if (!o||!v) return;
+  const wasSelected = (arvo===1 && o.classList.contains('sel-ok')) || (arvo===0 && v.classList.contains('sel-no'));
+  o.classList.remove('sel-ok','sel-no'); v.classList.remove('sel-ok','sel-no');
+  if (!wasSelected) { if(arvo===1) o.classList.add('sel-ok'); else v.classList.add('sel-no'); }
+  updateParentTotal(id, prefix);
+}
+
+function updateParentTotal(id, prefix) {
+  // If this is an osatehtava, update parent total
+  if (prefix !== 'o') return;
+  tehtavat.forEach(t => {
+    if (t.osatehtavat && t.osatehtavat.some(o => o.id === id)) {
+      recomputeParentTotal(t);
+    }
+  });
+}
+
+function recomputeParentTotal(t) {
+  const el = document.getElementById(`parent-total-${t.id}`);
+  if (!el) return;
+  let sum = 0, max = 0, hasAny = false;
+  t.osatehtavat.forEach(o => {
+    const score = getOsaScore(o);
+    if (score.pisteet !== null) { sum += score.pisteet; hasAny = true; }
+    if (o.max_pisteet !== null) max += o.max_pisteet;
+  });
+  el.textContent = hasAny ? `Yhteensä: ${sum} p${max>0?' / '+max+' p':''}` : 'Yhteensä: —';
+}
+
+function getTehtavaScore(t) {
+  if (t.tyyppi === 'pisteet') {
+    const v = parseFloat(document.getElementById(`t-${t.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null };
+  } else if (t.tyyppi === 'oikein_vaarin') {
+    const o=document.getElementById(`t-ok-${t.id}`),v=document.getElementById(`t-no-${t.id}`);
+    const oikein=o?.classList.contains('sel-ok')?1:v?.classList.contains('sel-no')?0:null;
+    return { pisteet: oikein!==null?(oikein?(t.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
+  } else {
+    const aika=aikaToS(document.getElementById(`t-aika-${t.id}`)?.value);
+    const pv=parseFloat(document.getElementById(`t-p-${t.id}`)?.value);
+    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
+  }
+}
+
+function getOsaScore(o) {
+  if (o.tyyppi === 'pisteet') {
+    const v=parseFloat(document.getElementById(`o-${o.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null };
+  } else if (o.tyyppi === 'oikein_vaarin') {
+    const ob=document.getElementById(`o-ok-${o.id}`),vb=document.getElementById(`o-no-${o.id}`);
+    const oikein=ob?.classList.contains('sel-ok')?1:vb?.classList.contains('sel-no')?0:null;
+    return { pisteet: oikein!==null?(oikein?(o.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
+  } else {
+    const aika=aikaToS(document.getElementById(`o-aika-${o.id}`)?.value);
+    const pv=parseFloat(document.getElementById(`o-p-${o.id}`)?.value);
+    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
+  }
+}
+
+function renderScore(tyyppi, id, prefix, existing, max, timerSek) {
+  if (tyyppi === 'pisteet') {
+    const val = existing?.pisteet ?? "";
+    return `<div class="score-row">
+      <input type="number" class="score-input" id="${prefix}-${id}" value="${val}" placeholder="0" step="0.5" min="0" ${max!==null?`max="${max}"`:''}
+        oninput="updateParentTotal(${id},'${prefix}')">
+      ${max!==null?`<span class="max-hint">/ ${max} p</span>`:'<span class="max-hint">pisteitä</span>'}
+    </div>`;
+  } else if (tyyppi === 'oikein_vaarin') {
+    return oikeinBtn(id, prefix, existing?.oikein ?? null);
+  } else {
+    const aikaVal = existing?.aika_sekuntia != null ? sToAika(existing.aika_sekuntia) : (timerSek ? sToAika(timerSek) : "");
+    const pVal = existing?.pisteet ?? "";
+    return `<div class="score-row">
+      <input type="text" class="aika-input" id="${prefix}-aika-${id}" value="${aikaVal}" placeholder="MM:SS"
+        oninput="updateParentTotal(${id},'${prefix}')">
+      <span class="max-hint">aika</span>
+      <input type="number" class="score-input" id="${prefix}-p-${id}" value="${pVal}" placeholder="0" step="0.5" min="0"
+        style="width:70px" oninput="updateParentTotal(${id},'${prefix}')">
+      <span class="max-hint">${max!==null?'/ '+max+' p':'p'}</span>
+    </div>`;
+  }
+}
+
+function renderTehtavat(tehtavat, suoritus) {
+  const lista = document.getElementById("tehtavat-lista");
+  lista.innerHTML = "";
+  const timerKey = `kipa_timer_${rastinumero}_${vartio}`;
+  let timerSek = null;
+  try { const td=JSON.parse(localStorage.getItem(timerKey)||"null"); if(td) timerSek=td.elapsed||null; } catch(e){}
+
+  tehtavat.forEach(t => {
+    const hasOsa = t.osatehtavat && t.osatehtavat.length > 0;
+    const existingT = suoritus.tehtava_tulokset.find(x => x.tehtava_id === t.id);
+
+    let scoreHTML = "";
+    if (!hasOsa) {
+      scoreHTML = renderScore(t.tyyppi, t.id, 't', existingT, t.max_pisteet, timerSek);
+    }
+
+    let osaHTML = "";
+    if (hasOsa) {
+      osaHTML = t.osatehtavat.map(o => {
+        const existingO = suoritus.osatehtava_tulokset.find(x => x.osatehtava_id === o.id);
+        return `<div class="osatehtava-block">
+          <div class="osa-header">
+            <span class="osa-nimi">${o.nimi}</span>
+            <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
+          </div>
+          ${renderScore(o.tyyppi, o.id, 'o', existingO, o.max_pisteet, null)}
+        </div>`;
+      }).join("");
+      osaHTML += `<div class="parent-total" id="parent-total-${t.id}">Yhteensä: —</div>`;
+    }
+
+    const card = document.createElement("div");
+    card.className = "tehtava-card";
+    card.innerHTML = `
+      <div class="tehtava-header">
+        <span class="tehtava-nimi">${t.nimi}</span>
+        <span class="${tyyppiClass(t.tyyppi)}">${tyyppiLabel(t.tyyppi)}</span>
+      </div>
+      ${scoreHTML}${osaHTML}
+    `;
+    lista.appendChild(card);
+  });
+
+  // Compute initial parent totals
+  tehtavat.forEach(t => { if(t.osatehtavat?.length) recomputeParentTotal(t); });
+}
+
+async function tallenna() {
+  const btn = document.getElementById("tallenna-btn");
+  btn.disabled = true; btn.textContent = "Tallennetaan...";
+  document.getElementById("virhe").style.display = "none";
+  const nyt = new Date().toLocaleString("fi-FI");
+
+  try {
+    for (const t of tehtavat) {
+      if (t.osatehtavat && t.osatehtavat.length > 0) {
+        for (const o of t.osatehtavat) {
+          const s = getOsaScore(o);
+          if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
+            await fetch("/api/tulos", { method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({suoritus_id:suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt}) });
+          }
+        }
+      } else {
+        const s = getTehtavaScore(t);
+        if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
+          await fetch("/api/tulos", { method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({suoritus_id:suoritusId, tehtava_id:t.id, ...s, token, aika:nyt}) });
+        }
+      }
+    }
+
+    const kommentti = document.getElementById("kommentti").value.trim() || null;
+    await fetch(`/api/suoritus/${suoritusId}`, { method:"PUT", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({kommentti, token}) });
+
+    // Clear timer
+    localStorage.removeItem(`kipa_timer_${rastinumero}_${vartio}`);
+
+    document.getElementById("ok-viesti").style.display = "flex";
+    setTimeout(() => takaisin(), 1200);
+  } catch(e) {
+    const el = document.getElementById("virhe");
+    el.textContent = "Virhe tallennuksessa: " + e.message;
+    el.style.display = "flex";
+  } finally {
+    btn.disabled = false; btn.textContent = "Tallenna pisteet";
+  }
+}
+
+async function init() {
+  const lataus = document.getElementById("lataus");
+  try {
+    const [rastiRes, suoritusRes, tehtavatRes] = await Promise.all([
+      fetch("/api/rastit"),
+      fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${rastiId}&token=${encodeURIComponent(token)}`),
+      fetch(`/api/tehtavat?rasti_id=${rastiId}`)
+    ]);
+
+    if (suoritusRes.status === 401) { localStorage.clear(); window.location.href="/"; return; }
+    if (!suoritusRes.ok) throw new Error("Virhe suorituksen latauksessa");
+
+    const rastit = await rastiRes.json();
+    const rasti = rastit.find(r => r.id === rastiId);
+    if (rasti) document.getElementById("otsikko").textContent = `Rasti ${rasti.numero} — Pisteet`;
+
+    const suoritus = await suoritusRes.json();
+    suoritusId = suoritus.id;
+    tehtavat = await tehtavatRes.json();
+
+    lataus.style.display = "none";
+
+    if (!tehtavat.length) {
+      lataus.textContent = "Tällä rastilla ei ole tehtäviä.";
+      lataus.style.display = "flex";
+      return;
+    }
+
+    document.getElementById("tehtavat-lista").style.display = "block";
+    renderTehtavat(tehtavat, suoritus);
+
+    document.getElementById("kommentti-osio").style.display = "block";
+    if (suoritus.kommentti) document.getElementById("kommentti").value = suoritus.kommentti;
+
+    document.getElementById("tallenna-btn").style.display = "block";
+  } catch(e) {
+    lataus.className = "msg msg-error";
+    lataus.textContent = "Virhe: " + e.message;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

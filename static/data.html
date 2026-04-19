@@ -24,7 +24,7 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Leimausdata — ohjeet</span>
@@ -112,8 +112,8 @@ function exportCSV() {
   a.download="leimaukset.csv"; a.click();
 }
 
-function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
-function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 lataa();
 </script>

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__ide__getDiagnostics",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "Bash(xargs -I{} basename {})"
     ]
   }
 }

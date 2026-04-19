@@ -17,7 +17,7 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Admin-hallinta — ohjeet</span>
@@ -76,8 +76,28 @@
     </a>
     <a class="big-btn" href="rastit.html">
       Hallitse rasteja
-      <span>Järjestys, kestot ja siirtymäajat</span>
+      <span>Järjestys, kestot, siirtymäajat ja tehtävät</span>
     </a>
+    <a class="big-btn" href="tulokset.html">
+      Tulokset
+      <span>Katso vartioiden pisteet rasteittain</span>
+    </a>
+
+    <hr class="divider">
+
+    <!-- Pisteytys -->
+    <div class="card">
+      <div class="card-title">Pisteytys</div>
+      <div id="pisteytys-tila" class="msg msg-ok" style="display:none;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="p-pois" onclick="asetaPisteytys('kaikki_pois')">Kaikki pois</button>
+        <button class="btn btn-ghost btn-sm" id="p-yksittain" onclick="asetaPisteytys('yksittain')">Yksittäin</button>
+        <button class="btn btn-ghost btn-sm" id="p-paalla" onclick="asetaPisteytys('kaikki_paalla')">Kaikki päällä</button>
+      </div>
+      <div style="font-size:.78rem;color:var(--muted);margin-top:8px">
+        <em>Yksittäin</em> = per-rasti hallinta rastit-sivulla
+      </div>
+    </div>
 
     <hr class="divider">
 
@@ -226,15 +246,39 @@ async function poistaUser(id, nimi) {
   await lataaUsers();
 }
 
+async function lataaAsetukset() {
+  const res = await fetch("/api/asetukset");
+  if (!res.ok) return;
+  const a = await res.json();
+  const tila = a.pisteytys_tila || "kaikki_pois";
+  const labels = {kaikki_pois:"Kaikki pois",yksittain:"Yksittäin",kaikki_paalla:"Kaikki päällä"};
+  const el = document.getElementById("pisteytys-tila");
+  if (el) { el.textContent="Tila: "+labels[tila]; el.style.display="flex"; }
+  ["p-pois","p-yksittain","p-paalla"].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.remove("btn-primary");
+    if (btn) btn.classList.add("btn-ghost");
+  });
+  const map = {kaikki_pois:"p-pois",yksittain:"p-yksittain",kaikki_paalla:"p-paalla"};
+  const active = document.getElementById(map[tila]);
+  if (active) { active.classList.remove("btn-ghost"); active.classList.add("btn-primary"); }
+}
+
+async function asetaPisteytys(arvo) {
+  await fetch("/api/asetus/pisteytys_tila", {method:"PUT",headers:{"Content-Type":"application/json","x-admin-token":localStorage.getItem("admin_token")},body:JSON.stringify({arvo})});
+  await lataaAsetukset();
+}
+
 function naytaDashboard() {
   document.getElementById("kirjautuminen").style.display="none";
   document.getElementById("dashboard").style.display="block";
   document.getElementById("logout-wrap").style.display="flex";
   lataaUsers();
+  lataaAsetukset();
 }
 
-function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
-function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 if (localStorage.getItem("admin_token")) naytaDashboard();

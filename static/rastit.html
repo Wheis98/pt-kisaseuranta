@@ -30,7 +30,7 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Rastien hallinta — ohjeet</span>
@@ -100,13 +100,15 @@ function adminHeaders() { return { "Content-Type":"application/json", "x-admin-t
 
 let rastit = [];
 let dragSrcIdx = null;
-
 let mediaanit = {};
+let pisteytystila = "kaikki_pois";
 
 async function lataaRastit() {
-  const [rRes, mRes] = await Promise.all([fetch("/api/rastit"), fetch("/api/siirtyma_mediaanit")]);
+  const [rRes, mRes, aRes] = await Promise.all([fetch("/api/rastit"), fetch("/api/siirtyma_mediaanit"), fetch("/api/asetukset")]);
   rastit = await rRes.json();
   mediaanit = await mRes.json();
+  const a = await aRes.json();
+  pisteytystila = a.pisteytys_tila || "kaikki_pois";
   renderLista();
 }
 
@@ -116,11 +118,16 @@ function renderLista() {
   rastit.forEach((r,i) => {
     const li = document.createElement("div");
     li.className="rasti-item"; li.draggable=true; li.dataset.id=r.id; li.dataset.idx=i;
+    const pisteytysToggle = pisteytystila === "yksittain"
+      ? `<button class="btn btn-xs ${r.pisteytys_kaytos ? 'btn-success' : 'btn-ghost'}" onclick="togglePisteytys(${r.id})" title="Pisteytys">🎯${r.pisteytys_kaytos?'päällä':'pois'}</button>`
+      : "";
     li.innerHTML=`
       <span class="drag-handle">⠿</span>
       <span class="rasti-num">${i+1}</span>
       <span class="rasti-name">${r.numero}</span>
       <span class="rasti-meta">${r.kesto_min} min rastilla</span>
+      ${pisteytysToggle}
+      <a class="btn btn-ghost btn-xs" href="tehtavat.html?rasti_id=${r.id}">Tehtävät</a>
       <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus(${i})">Muokkaa</button>
       <button class="btn btn-danger btn-xs" onclick="poistaRasti(${r.id})">Poista</button>
     `;
@@ -160,8 +167,8 @@ async function tallennaSiirtyma(id, idx) {
   btn.textContent="✓"; setTimeout(()=>{ btn.textContent="Tallenna"; },1500);
 }
 
-function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
-function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 function avaMuokkaus(idx) {
@@ -210,6 +217,11 @@ async function lisaaRasti() {
 async function poistaRasti(id) {
   if (!confirm("Poistetaanko rasti?")) return;
   await fetch("/api/rasti/"+id, { method:"DELETE", headers:adminHeaders() });
+  await lataaRastit();
+}
+
+async function togglePisteytys(id) {
+  await fetch("/api/rasti/"+id+"/pisteytys", { method:"PUT", headers:adminHeaders() });
   await lataaRastit();
 }
 

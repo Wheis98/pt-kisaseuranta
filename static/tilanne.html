@@ -17,7 +17,7 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Tilanne — ohjeet</span>
@@ -118,8 +118,8 @@ async function paivita() {
   document.getElementById("paivitys").textContent = "Päivitetty "+new Date().toLocaleTimeString("fi-FI",{hour:"2-digit",minute:"2-digit"});
 }
 
-function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
-function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 paivita();
 setInterval(paivita, 30000);

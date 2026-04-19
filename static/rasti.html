@@ -16,7 +16,7 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay hidden" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Rastin valinta — ohjeet</span>
@@ -77,12 +77,12 @@ async function lataaRastit() {
         <div class="list-item-meta">${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä</div>
       </div>
     `;
-    btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); window.location.href = "leimaus.html"; };
+    btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); localStorage.setItem("rasti_id", r.id); window.location.href = "leimaus.html"; };
     div.appendChild(btn);
   });
 }
-function avaaOhje() { document.getElementById("ohje-modal").classList.remove("hidden"); }
-function suljeMo() { document.getElementById("ohje-modal").classList.add("hidden"); }
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 lataaRastit();
 </script>
