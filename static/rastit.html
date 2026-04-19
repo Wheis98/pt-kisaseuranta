@@ -128,7 +128,7 @@ function renderLista() {
       <span class="rasti-meta">${r.kesto_min} min rastilla</span>
       ${pisteytysToggle}
       <a class="btn btn-ghost btn-xs" href="tehtavat.html?rasti_id=${r.id}">Tehtävät</a>
-      <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus(${i})">Muokkaa</button>
+      <button class="btn btn-ghost btn-xs muokkaa-btn" onclick="avaMuokkaus(${i})">Muokkaa</button>
       <button class="btn btn-danger btn-xs" onclick="poistaRasti(${r.id})">Poista</button>
     `;
     li.addEventListener("dragstart", e => { dragSrcIdx=i; li.classList.add("dragging"); e.dataTransfer.effectAllowed="move"; });
@@ -173,10 +173,10 @@ document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 
 function avaMuokkaus(idx) {
   document.querySelectorAll(".muokkaus-row").forEach(el=>el.remove());
-  document.querySelectorAll(".rasti-item .btn-ghost").forEach(b=>{ if(b.textContent==="✕") { b.textContent="Muokkaa"; b.onclick=()=>avaMuokkaus(parseInt(b.closest(".rasti-item").dataset.idx)); } });
+  document.querySelectorAll(".rasti-item .muokkaa-btn").forEach(b=>{ if(b.textContent==="✕") { b.textContent="Muokkaa"; b.onclick=()=>avaMuokkaus(parseInt(b.closest(".rasti-item").dataset.idx)); } });
   const r = rastit[idx];
   const li = document.getElementById("rasti-lista").querySelectorAll(".rasti-item")[idx];
-  const editBtn = li.querySelectorAll(".btn-ghost")[0];
+  const editBtn = li.querySelector(".muokkaa-btn");
   editBtn.textContent="✕"; editBtn.onclick=()=>{ document.querySelectorAll(".muokkaus-row").forEach(el=>el.remove()); editBtn.textContent="Muokkaa"; editBtn.onclick=()=>avaMuokkaus(idx); };
   const muokkaus = document.createElement("div");
   muokkaus.className="muokkaus-row";

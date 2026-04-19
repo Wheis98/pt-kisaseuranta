@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kipa — Valitse rasti</title>
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .rasti-lukittu { opacity: .35; cursor: pointer; }
+    .rasti-lukittu:hover { opacity: .5; }
+    .lukko-icon { font-size: 1.1rem; margin-right: 4px; }
+  </style>
 </head>
 <body>
 <div class="header">
@@ -16,11 +21,11 @@
     <button class="btn-help" onclick="avaaOhje()">?</button>
   </div>
 </div>
-<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo('ohje-modal')">
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title">Rastin valinta — ohjeet</span>
-      <button class="modal-close" onclick="suljeMo()">×</button>
+      <button class="modal-close" onclick="suljeMo('ohje-modal')">×</button>
     </div>
     <div class="modal-body">
       <h3>Valitse rasti</h3>
@@ -32,10 +37,28 @@
       <ul>
         <li>Voit vaihtaa rastia myöhemmin leimaus-sivun oikeasta yläkulmasta (<strong>Vaihda rastia</strong>).</li>
       </ul>
-      <h3>Ei rasteja listassa?</h3>
+      <h3>Lukittu rasti</h3>
       <ul>
-        <li>Pyydä adminia luomaan rastit hallintapaneelista.</li>
+        <li>Läpinäkyvä rasti tarkoittaa että sinulla ei ole siihen oikeutta.</li>
+        <li>Klikkaa lukittua rastia pyytääksesi käyttöoikeutta adminilta.</li>
       </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Pyyntö-modal -->
+<div class="modal-overlay" style="display:none" id="pyynto-modal" onclick="if(event.target===this)suljeMo('pyynto-modal')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Käyttöoikeus puuttuu</span>
+      <button class="modal-close" onclick="suljeMo('pyynto-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="pyynto-teksti"></p>
+    </div>
+    <div style="display:flex;gap:8px;padding:0 20px 20px">
+      <button class="btn btn-primary" style="flex:1" id="pyynto-btn" onclick="lahetaPyynto()">Pyydä käyttöoikeutta</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="suljeMo('pyynto-modal')">Peruuta</button>
     </div>
   </div>
 </div>
@@ -46,7 +69,6 @@
     <div id="ei-rasteja" class="msg msg-warn" style="display:none">Ei rasteja vielä. Pyydä adminia luomaan rastit.</div>
     <div id="rastit-lista"></div>
   </div>
-
   <div class="link-group">
     <a class="nav-link" href="/">Kirjaudu eri nimellä</a>
   </div>
@@ -58,32 +80,71 @@ const nimi = localStorage.getItem("nimi");
 if (!token) window.location.href = "/";
 document.getElementById("kayttaja-info").textContent = nimi;
 
+let pyyntoRastiId = null;
+let pyyntoRastiNumero = null;
+
 async function lataaRastit() {
-  const res = await fetch("/api/rastit");
-  const lista = await res.json();
+  const [rastiRes, oikeusRes] = await Promise.all([
+    fetch("/api/rastit"),
+    fetch("/api/oikeudet?token=" + encodeURIComponent(token))
+  ]);
+  const lista = await rastiRes.json();
+  const oikeus = oikeusRes.ok ? await oikeusRes.json() : { kaikki: true, oikeudet: [] };
+
   const div = document.getElementById("rastit-lista");
   const eiDiv = document.getElementById("ei-rasteja");
   div.innerHTML = "";
-  if (lista.length === 0) { eiDiv.style.display = "flex"; return; }
+  if (!lista.length) { eiDiv.style.display = "flex"; return; }
   eiDiv.style.display = "none";
+
   lista.forEach(r => {
+    const sallittu = oikeus.kaikki || oikeus.oikeudet.includes(r.id);
     const btn = document.createElement("button");
-    btn.className = "list-item btn-block";
+    btn.className = "list-item btn-block" + (sallittu ? "" : " rasti-lukittu");
     btn.style.cssText = "cursor:pointer;border:none;text-align:left;background:var(--card);margin-bottom:8px;";
     btn.innerHTML = `
-      <div class="dot dot-blue"></div>
+      <div class="dot ${sallittu ? 'dot-blue' : 'dot-gray'}"></div>
       <div>
-        <div class="list-item-name">Rasti ${r.numero}</div>
-        <div class="list-item-meta">${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä</div>
+        <div class="list-item-name">${sallittu ? "" : '<span class="lukko-icon">🔒</span>'}Rasti ${r.numero}</div>
+        <div class="list-item-meta">${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä${sallittu ? "" : " · Ei käyttöoikeutta"}</div>
       </div>
     `;
-    btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); localStorage.setItem("rasti_id", r.id); window.location.href = "leimaus.html"; };
+    if (sallittu) {
+      btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); localStorage.setItem("rasti_id", r.id); window.location.href = "leimaus.html"; };
+    } else {
+      btn.onclick = () => avaaaPyynto(r.id, r.numero);
+    }
     div.appendChild(btn);
   });
 }
-function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
-function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
-document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
+
+function avaaaPyynto(rastiId, rastiNumero) {
+  pyyntoRastiId = rastiId;
+  pyyntoRastiNumero = rastiNumero;
+  document.getElementById("pyynto-teksti").textContent = `Sinulla ei ole oikeutta rastille ${rastiNumero}. Haluatko pyytää adminilta käyttöoikeutta?`;
+  document.getElementById("pyynto-btn").disabled = false;
+  document.getElementById("pyynto-btn").textContent = "Pyydä käyttöoikeutta";
+  document.getElementById("pyynto-modal").style.display = "flex";
+}
+
+async function lahetaPyynto() {
+  const btn = document.getElementById("pyynto-btn");
+  btn.disabled = true; btn.textContent = "Lähetetään...";
+  const res = await fetch("/api/oikeus/pyynto?token=" + encodeURIComponent(token), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rasti_id: pyyntoRastiId })
+  });
+  if (res.ok) {
+    btn.textContent = "✓ Pyyntö lähetetty";
+    setTimeout(() => suljeMo("pyynto-modal"), 1500);
+  } else {
+    btn.textContent = "Virhe — yritä uudelleen"; btn.disabled = false;
+  }
+}
+
+function avaaOhje() { document.getElementById("ohje-modal").style.display = "flex"; }
+function suljeMo(id) { document.getElementById(id).style.display = "none"; }
+document.addEventListener("keydown", e => { if (e.key === "Escape") { suljeMo("ohje-modal"); suljeMo("pyynto-modal"); } });
 lataaRastit();
 </script>
 </body>

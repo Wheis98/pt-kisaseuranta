@@ -82,6 +82,35 @@
     </div>
   </div>
 
+  <!-- Pyydä tunnusta -->
+  <div class="card" id="pyynto-card" style="margin-top:12px">
+    <div class="card-title" style="font-size:.95rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="togglePyynto()">
+      Ei tunnusta? Pyydä käyttäjätunnusta
+      <span id="pyynto-arrow" style="font-size:.8rem;color:var(--muted)">▼</span>
+    </div>
+    <div id="pyynto-lomake" style="display:none">
+      <div id="pyynto-virhe" class="msg msg-error" style="display:none"></div>
+      <div id="pyynto-ok" class="msg msg-ok" style="display:none"></div>
+      <div style="display:flex;gap:8px">
+        <div class="field" style="flex:1">
+          <label>Etunimi</label>
+          <input type="text" id="pyynto-etunimi" placeholder="Etunimi" autocomplete="given-name">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Sukunimi</label>
+          <input type="text" id="pyynto-sukunimi" placeholder="Sukunimi" autocomplete="family-name">
+        </div>
+      </div>
+      <div class="field">
+        <label>Rasti (alustavasti)</label>
+        <select id="pyynto-rasti" style="width:100%;padding:8px 10px;font-size:.9rem;border:1.5px solid var(--border);border-radius:6px">
+          <option value="">— ei tiedossa —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-block" onclick="lahetaKayttajaPyynto()">Lähetä pyyntö adminille →</button>
+    </div>
+  </div>
+
   <div class="link-group">
     <a class="nav-link" href="admin.html">Admin-hallinta</a>
   </div>
@@ -179,6 +208,56 @@ async function asetaSalasana() {
   } catch(e) {
     naytaVirhe(e.message);
     btn.disabled = false; btn.textContent = "Aseta salasana →";
+  }
+}
+
+async function togglePyynto() {
+  const lomake = document.getElementById("pyynto-lomake");
+  const arrow = document.getElementById("pyynto-arrow");
+  const auki = lomake.style.display !== "none";
+  lomake.style.display = auki ? "none" : "block";
+  arrow.textContent = auki ? "▼" : "▲";
+  if (!auki) lataaRastitPyyntoon();
+}
+
+async function lataaRastitPyyntoon() {
+  const sel = document.getElementById("pyynto-rasti");
+  if (sel.options.length > 1) return;
+  const res = await fetch("/api/rastit");
+  if (!res.ok) return;
+  const rastit = await res.json();
+  rastit.forEach(r => {
+    const o = document.createElement("option");
+    o.value = r.id; o.textContent = "Rasti " + r.numero;
+    sel.appendChild(o);
+  });
+}
+
+async function lahetaKayttajaPyynto() {
+  const etunimi = document.getElementById("pyynto-etunimi").value.trim();
+  const sukunimi = document.getElementById("pyynto-sukunimi").value.trim();
+  const rastiId = document.getElementById("pyynto-rasti").value || null;
+  const virhe = document.getElementById("pyynto-virhe");
+  const ok = document.getElementById("pyynto-ok");
+  virhe.style.display = "none"; ok.style.display = "none";
+  if (!etunimi || !sukunimi) { virhe.textContent = "Täytä etu- ja sukunimi."; virhe.style.display = "flex"; return; }
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = "Lähetetään...";
+  try {
+    const res = await fetch("/api/kayttaja/pyynto", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ etunimi, sukunimi, rasti_id: rastiId ? parseInt(rastiId) : null })
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    ok.textContent = "Pyyntö lähetetty! Admin hyväksyy tunnuksen pian.";
+    ok.style.display = "flex";
+    document.getElementById("pyynto-etunimi").value = "";
+    document.getElementById("pyynto-sukunimi").value = "";
+    document.getElementById("pyynto-rasti").value = "";
+  } catch(e) {
+    virhe.textContent = "Virhe: " + e.message; virhe.style.display = "flex";
+  } finally {
+    btn.disabled = false; btn.textContent = "Lähetä pyyntö adminille →";
   }
 }
 

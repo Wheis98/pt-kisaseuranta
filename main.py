@@ -94,6 +94,26 @@ CREATE TABLE IF NOT EXISTS osatehtava_tulokset (
   paivitetty TEXT NOT NULL,
   UNIQUE(suoritus_id, osatehtava_id)
 );
+CREATE TABLE IF NOT EXISTS kayttaja_pyynnot (
+  id INTEGER PRIMARY KEY,
+  etunimi TEXT NOT NULL,
+  sukunimi TEXT NOT NULL,
+  rasti_id INTEGER,
+  aika TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rasti_oikeudet (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  rasti_id INTEGER NOT NULL,
+  UNIQUE(user_id, rasti_id)
+);
+CREATE TABLE IF NOT EXISTS oikeus_pyynnot (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  rasti_id INTEGER NOT NULL,
+  aika TEXT NOT NULL,
+  UNIQUE(user_id, rasti_id)
+);
 """)
 
 # Migraatio: poistetaan virheellisesti lisätty rastinumero users-taulusta
@@ -550,12 +570,35 @@ def aktiiviset(numero: str):
 
 
 @app.get("/api/data")
-def get_data():
-    # Palauttaa kaikki leimaukset uusimmasta vanhimpaan — käytetään data.html-näkymässä
-    rows = db.execute(
-        "SELECT kayttaja, numero, vartio, jasenet, aika, tyyppi FROM leimaukset ORDER BY id DESC"
-    ).fetchall()
+def get_data(token: str = "", numero: str = "", vartio: str = "", x_admin_token: str = Header(None)):
+    if x_admin_token and x_admin_token in admin_sessions:
+        query = "SELECT id, kayttaja, numero, vartio, jasenet, aika, tyyppi FROM leimaukset WHERE 1=1"
+        params: list = []
+        if numero:
+            query += " AND numero=?"; params.append(numero)
+        if vartio:
+            query += " AND vartio=?"; params.append(vartio)
+        query += " ORDER BY id DESC"
+    elif token:
+        session = sessions.get(token)
+        if not session:
+            raise HTTPException(status_code=401, detail="Tuntematon istunto")
+        if not numero:
+            raise HTTPException(status_code=400, detail="Rastinumero vaaditaan")
+        query = "SELECT id, kayttaja, numero, vartio, jasenet, aika, tyyppi FROM leimaukset WHERE numero=? ORDER BY id DESC"
+        params = [numero]
+    else:
+        raise HTTPException(status_code=401, detail="Kirjaudu uudelleen")
+    rows = db.execute(query, params).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.delete("/api/leimaus/{leimaus_id}")
+def delete_leimaus(leimaus_id: int, x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    db.execute("DELETE FROM leimaukset WHERE id=?", (leimaus_id,))
+    db.commit()
+    return {"ok": True}
 
 
 # ── Vartiot ───────────────────────────────────────────────────────────────────
@@ -679,6 +722,12 @@ def tilanne(numero: str = ""):
 
     vartiot_rows = db.execute("SELECT nimi, jasenet FROM vartiot ORDER BY nimi").fetchall()
 
+    kaynneet_set = set()
+    if numero:
+        kaynneet_set = set(row["vartio"] for row in db.execute(
+            "SELECT DISTINCT vartio FROM leimaukset WHERE numero=? AND tyyppi='ulos'", (numero,)
+        ).fetchall())
+
     result = []
     for v in vartiot_rows:
         last = db.execute(
@@ -719,6 +768,7 @@ def tilanne(numero: str = ""):
                         pass
             else:
                 status = "matkalla"
+                sijainti = lahto_rasti
 
         result.append({
             "nimi": v["nimi"],
@@ -728,9 +778,142 @@ def tilanne(numero: str = ""):
             "aika": aika,
             "arvioitu_saapuminen": arvioitu_saapuminen,
             "siirtyma_lahde": siirtyma_lahde if status == "tulossa" else None,
+            "kaynut_talla_rastilla": v["nimi"] in kaynneet_set,
         })
 
     return result
+
+
+# ── Käyttäjäpyynnöt ───────────────────────────────────────────────────────────
+
+@app.post("/api/kayttaja/pyynto")
+def tee_kayttaja_pyynto(data: dict):
+    etunimi = (data.get("etunimi") or "").strip()
+    sukunimi = (data.get("sukunimi") or "").strip()
+    rasti_id = data.get("rasti_id")
+    if not etunimi or not sukunimi:
+        raise HTTPException(status_code=400, detail="Etu- ja sukunimi vaaditaan")
+    from datetime import datetime
+    aika = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    db.execute("INSERT INTO kayttaja_pyynnot (etunimi, sukunimi, rasti_id, aika) VALUES (?,?,?,?)",
+               (etunimi, sukunimi, rasti_id, aika))
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/kayttaja/pyynnot")
+def get_kayttaja_pyynnot(x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    rows = db.execute("""
+        SELECT p.id, p.etunimi, p.sukunimi, p.rasti_id, r.numero, p.aika
+        FROM kayttaja_pyynnot p
+        LEFT JOIN rastit r ON r.id=p.rasti_id
+        ORDER BY p.id DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+@app.post("/api/kayttaja/pyynto/{pyynto_id}/hyvaksy")
+def hyvaksy_kayttaja_pyynto(pyynto_id: int, x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    pyynto = db.execute("SELECT * FROM kayttaja_pyynnot WHERE id=?", (pyynto_id,)).fetchone()
+    if not pyynto:
+        raise HTTPException(status_code=404, detail="Pyyntöä ei löydy")
+    nimi = pyynto["etunimi"] + " " + pyynto["sukunimi"]
+    if db.execute("SELECT id FROM users WHERE nimi=?", (nimi,)).fetchone():
+        raise HTTPException(status_code=409, detail=f"Käyttäjä '{nimi}' on jo olemassa")
+    token = str(uuid.uuid4())
+    db.execute("INSERT INTO users (nimi, token) VALUES (?,?)", (nimi, token))
+    db.commit()
+    user = db.execute("SELECT id FROM users WHERE nimi=?", (nimi,)).fetchone()
+    if pyynto["rasti_id"] and user:
+        db.execute("INSERT OR IGNORE INTO rasti_oikeudet (user_id, rasti_id) VALUES (?,?)",
+                   (user["id"], pyynto["rasti_id"]))
+        db.commit()
+    db.execute("DELETE FROM kayttaja_pyynnot WHERE id=?", (pyynto_id,))
+    db.commit()
+    return {"ok": True, "nimi": nimi}
+
+@app.delete("/api/kayttaja/pyynto/{pyynto_id}")
+def poista_kayttaja_pyynto(pyynto_id: int, x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    db.execute("DELETE FROM kayttaja_pyynnot WHERE id=?", (pyynto_id,))
+    db.commit()
+    return {"ok": True}
+
+
+# ── Käyttöoikeudet ────────────────────────────────────────────────────────────
+
+@app.get("/api/oikeudet")
+def get_oikeudet(token: str = ""):
+    session = sessions.get(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Tuntematon istunto")
+    user = db.execute("SELECT id FROM users WHERE token=?", (token,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=401, detail="Tuntematon käyttäjä")
+    rows = db.execute("SELECT rasti_id FROM rasti_oikeudet WHERE user_id=?", (user["id"],)).fetchall()
+    if not rows:
+        return {"kaikki": True, "oikeudet": []}
+    return {"kaikki": False, "oikeudet": [r["rasti_id"] for r in rows]}
+
+@app.get("/api/oikeudet/admin")
+def get_oikeudet_admin(x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    users = db.execute("SELECT id, nimi FROM users ORDER BY nimi").fetchall()
+    result = []
+    for u in users:
+        rows = db.execute("SELECT rasti_id FROM rasti_oikeudet WHERE user_id=?", (u["id"],)).fetchall()
+        result.append({"id": u["id"], "nimi": u["nimi"], "oikeudet": [r["rasti_id"] for r in rows]})
+    return result
+
+@app.put("/api/oikeudet/{user_id}")
+def set_oikeudet(user_id: int, data: dict, x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    rasti_ids = data.get("rasti_ids", [])
+    db.execute("DELETE FROM rasti_oikeudet WHERE user_id=?", (user_id,))
+    for rid in rasti_ids:
+        db.execute("INSERT OR IGNORE INTO rasti_oikeudet (user_id, rasti_id) VALUES (?,?)", (user_id, rid))
+    db.commit()
+    # Poista hyväksytyt pyynnöt
+    if rasti_ids:
+        db.execute("DELETE FROM oikeus_pyynnot WHERE user_id=? AND rasti_id IN ({})".format(",".join("?"*len(rasti_ids))), [user_id]+rasti_ids)
+        db.commit()
+    return {"ok": True}
+
+@app.post("/api/oikeus/pyynto")
+def tee_pyynto(data: dict, token: str = ""):
+    session = sessions.get(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Tuntematon istunto")
+    user = db.execute("SELECT id FROM users WHERE token=?", (token,)).fetchone()
+    if not user:
+        raise HTTPException(status_code=401, detail="Tuntematon käyttäjä")
+    rasti_id = data.get("rasti_id")
+    if not rasti_id:
+        raise HTTPException(status_code=400, detail="rasti_id vaaditaan")
+    from datetime import datetime
+    aika = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    db.execute("INSERT OR IGNORE INTO oikeus_pyynnot (user_id, rasti_id, aika) VALUES (?,?,?)", (user["id"], rasti_id, aika))
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/oikeus/pyynnot")
+def get_pyynnot(x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    rows = db.execute("""
+        SELECT p.id, p.user_id, u.nimi, p.rasti_id, r.numero, p.aika
+        FROM oikeus_pyynnot p
+        JOIN users u ON u.id=p.user_id
+        JOIN rastit r ON r.id=p.rasti_id
+        ORDER BY p.id DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+@app.delete("/api/oikeus/pyynto/{pyynto_id}")
+def poista_pyynto(pyynto_id: int, x_admin_token: str = Header(None)):
+    vaadi_admin(x_admin_token)
+    db.execute("DELETE FROM oikeus_pyynnot WHERE id=?", (pyynto_id,))
+    db.commit()
+    return {"ok": True}
 
 
 # ── Asetukset ─────────────────────────────────────────────────────────────────

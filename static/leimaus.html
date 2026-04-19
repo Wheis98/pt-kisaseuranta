@@ -44,8 +44,9 @@
       </ul>
       <h3>Tilanne-välilehti</h3>
       <ul>
-        <li>Näyttää kaikkien vartioiden sijainnin suhteessa rastillesi.</li>
-        <li>🟢 Rastillasi — 🟠 Tulossa — 🔵 Muualla — ⚫ Matkalla</li>
+        <li>Näyttää vain sinun rastiisi liittyvät vartiot: rastillasi, tulossa tai juuri lähtenyt täältä.</li>
+        <li>Laskuri näyttää montako vartioista on jo käynyt rastillasi.</li>
+        <li>🟢 Rastillasi — 🟠 Tulossa — ⚫ Lähti täältä</li>
         <li>📊-merkki tarkoittaa että saapumisaika perustuu toteutuneeseen mediaaniin.</li>
       </ul>
       <h3>Tulossa pian -ilmoitus</h3>
@@ -105,38 +106,37 @@
         <button class="toggle-btn" id="man-btn" onclick="manuaalinen()">✏️ Manuaalinen</button>
       </div>
       <div id="reader"></div>
-      <div class="field ac-wrap">
-        <label for="vartio">Vartion nimi</label>
-        <input type="text" id="vartio" placeholder="Kirjoita vartion nimi..." autocomplete="off">
-        <div id="ac-lista" class="ac-list" style="display:none"></div>
+      <div id="sisaan-kentat" style="display:none">
+        <div class="field ac-wrap">
+          <label for="vartio">Vartion nimi</label>
+          <input type="text" id="vartio" placeholder="Kirjoita vartion nimi..." autocomplete="off">
+          <div id="ac-lista" class="ac-list" style="display:none"></div>
+        </div>
+        <div id="jasenet-naytto" style="display:none;font-size:.9rem;color:var(--muted);margin-bottom:8px">Jäseniä: <strong id="jasenet-arvo"></strong></div>
+        <div class="field">
+          <label for="aika">Aikaleima</label>
+          <input type="text" id="aika" readonly>
+        </div>
+        <div id="viesti" style="display:none" class="msg"></div>
+        <button class="btn btn-success btn-block" id="tallenna-btn" onclick="tallennaLeimaus()">Tallenna leimaus</button>
       </div>
-      <div class="field">
-        <label for="jasenet">Jäsenten määrä</label>
-        <input type="number" id="jasenet" placeholder="0" min="0" inputmode="numeric">
-      </div>
-      <div class="field">
-        <label for="aika">Aikaleima</label>
-        <input type="text" id="aika" readonly>
-      </div>
-      <div id="viesti" style="display:none" class="msg"></div>
-      <button class="btn btn-success btn-block" id="tallenna-btn" onclick="tallennaLeimaus()">Tallenna leimaus</button>
     </div>
 
     <div class="link-group">
-      <a class="nav-link" href="data.html">Katso kaikki leimaukset</a>
+      <a class="nav-link" href="data.html?mode=rasti">Katso kaikki leimaukset</a>
     </div>
   </div>
 
   <!-- Tilanne-paneeli -->
   <div id="panel-tilanne" class="tab-panel">
+    <div id="tilanne-laskuri" style="font-size:.95rem;font-weight:700;margin-bottom:12px;color:var(--primary)"></div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;font-size:.82rem;color:var(--muted)">
       <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-green"></span> Rastillasi</span>
       <span style="display:flex;align-items:center;gap:5px"><span class="dot" style="background:var(--orange)"></span> Tulossa</span>
-      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-blue"></span> Muualla</span>
-      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-gray"></span> Matkalla</span>
+      <span style="display:flex;align-items:center;gap:5px"><span class="dot dot-gray"></span> Lähti täältä</span>
     </div>
     <div id="tilanne-lista"></div>
-    <div id="tilanne-tyhja" class="msg msg-ok" style="display:none">Ei vartioita.</div>
+    <div id="tilanne-tyhja" class="msg msg-ok" style="display:none">Ei vartioita tällä rastilla tai tulossa.</div>
     <div id="tilanne-paivitys" style="text-align:center;font-size:.78rem;color:var(--muted);margin-top:12px"></div>
   </div>
 
@@ -158,6 +158,7 @@ document.getElementById("kayttaja-info").textContent = nimi;
 let qrScanner = null;
 let vartioData = [];
 let acValittu = -1;
+let valittuJasenet = 0;
 
 function aikaleima() { return new Date().toLocaleString("fi-FI"); }
 
@@ -189,7 +190,9 @@ async function lataaVartiot() {
 }
 function valitseVartio(v) {
   document.getElementById("vartio").value = v.nimi;
-  document.getElementById("jasenet").value = v.jasenet;
+  valittuJasenet = v.jasenet;
+  document.getElementById("jasenet-arvo").textContent = v.jasenet;
+  document.getElementById("jasenet-naytto").style.display = "block";
   document.getElementById("aika").value = aikaleima();
   suljeAC();
 }
@@ -367,8 +370,9 @@ async function tallennaLeimausUudelleen(vartio, jasenet) {
     const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,jasenet,aika,tyyppi:"sisaan",uudelleen:true})});
     if(!res.ok){const e=await res.json();if(res.status===401){localStorage.clear();window.location.href="/";return;}throw new Error(e.detail);}
     setViesti("Tallennettu!","ok");
-    document.getElementById("vartio").value=""; document.getElementById("jasenet").value=""; document.getElementById("aika").value="";
+    document.getElementById("vartio").value=""; document.getElementById("aika").value="";
     document.getElementById("man-btn").classList.remove("active"); document.getElementById("qr-btn").classList.remove("active");
+    document.getElementById("sisaan-kentat").style.display="none"; document.getElementById("jasenet-naytto").style.display="none"; valittuJasenet=0;
     await paivitaAktiiviset(); await paivitaTilanne();
   } catch(e){setViesti("Virhe: "+e.message,"error");}
   finally{btn.disabled=false;btn.textContent="Tallenna leimaus"; uudelleenVartio=null; uudelleenJasenet=null;}
@@ -378,38 +382,46 @@ async function tallennaLeimausUudelleen(vartio, jasenet) {
 function manuaalinen() {
   if (qrScanner) { qrScanner.stop().catch(()=>{}); qrScanner=null; }
   document.getElementById("reader").innerHTML="";
-  document.getElementById("vartio").value=""; document.getElementById("jasenet").value="";
+  document.getElementById("vartio").value="";
   document.getElementById("aika").value=aikaleima();
   document.getElementById("qr-btn").classList.remove("active");
   document.getElementById("man-btn").classList.add("active");
+  document.getElementById("sisaan-kentat").style.display="block";
   document.getElementById("vartio").focus();
 }
 async function avaaQR() {
   document.getElementById("qr-btn").classList.add("active");
   document.getElementById("man-btn").classList.remove("active");
   if (qrScanner) return;
-  qrScanner = new Html5Qrcode("reader");
-  const kamerat = await Html5Qrcode.getCameras();
-  const kameraId = kamerat.length>1 ? (kamerat.find(k=>/back|rear|environment/i.test(k.label))?.id??kamerat[kamerat.length-1].id) : kamerat[0]?.id;
-  qrScanner.start(kameraId||{facingMode:"environment"},{fps:10,qrbox:250},async(text)=>{
-    qrScanner.stop().then(()=>{qrScanner=null;});
-    const res=await fetch("/api/vartio/"+encodeURIComponent(text));
-    if(res.ok){const v=await res.json();document.getElementById("vartio").value=v.nimi;document.getElementById("jasenet").value=v.jasenet;}
-    else{setViesti("QR-koodia ei tunnistettu.","error");return;}
-    document.getElementById("aika").value=aikaleima();
+  try {
+    const kamerat = await Html5Qrcode.getCameras();
+    if (!kamerat || !kamerat.length) throw new Error("ei kameraa");
+    qrScanner = new Html5Qrcode("reader");
+    const kameraId = kamerat.length>1 ? (kamerat.find(k=>/back|rear|environment/i.test(k.label))?.id??kamerat[kamerat.length-1].id) : kamerat[0]?.id;
+    await qrScanner.start(kameraId||{facingMode:"environment"},{fps:10,qrbox:250},async(text)=>{
+      qrScanner.stop().then(()=>{qrScanner=null;});
+      const res=await fetch("/api/vartio/"+encodeURIComponent(text));
+      if(res.ok){const v=await res.json();document.getElementById("vartio").value=v.nimi;valittuJasenet=v.jasenet;document.getElementById("jasenet-arvo").textContent=v.jasenet;document.getElementById("jasenet-naytto").style.display="block";}
+      else{setViesti("QR-koodia ei tunnistettu.","error");return;}
+      document.getElementById("aika").value=aikaleima();
+      document.getElementById("sisaan-kentat").style.display="block";
+      document.getElementById("qr-btn").classList.remove("active");
+    });
+  } catch(err) {
+    qrScanner=null;
     document.getElementById("qr-btn").classList.remove("active");
-  }).catch(err=>{setViesti("QR-virhe: "+err,"error");qrScanner=null;});
+    manuaalinen();
+    setViesti("QR-koodin luku ei käytettävissä — leimaa manuaalisesti.","error");
+  }
 }
 
 // ── Tallenna ──
 async function tallennaLeimaus() {
   const vartio=document.getElementById("vartio").value.trim();
-  const jasetVal=document.getElementById("jasenet").value;
-  const jasenet=parseInt(jasetVal);
+  const jasenet=valittuJasenet;
   const aika=document.getElementById("aika").value||aikaleima();
   setViesti("","");
   if(!vartio){setViesti("Syötä vartion nimi.","error");return;}
-  if(jasetVal===""||isNaN(jasenet)||jasenet<0){setViesti("Syötä jäsenten määrä.","error");return;}
   const btn=document.getElementById("tallenna-btn");
   btn.disabled=true; btn.textContent="Tallennetaan…";
   try {
@@ -426,8 +438,9 @@ async function tallennaLeimaus() {
       throw new Error(e.detail);
     }
     setViesti("Tallennettu!","ok");
-    document.getElementById("vartio").value=""; document.getElementById("jasenet").value=""; document.getElementById("aika").value="";
+    document.getElementById("vartio").value=""; document.getElementById("aika").value="";
     document.getElementById("man-btn").classList.remove("active"); document.getElementById("qr-btn").classList.remove("active");
+    document.getElementById("sisaan-kentat").style.display="none"; document.getElementById("jasenet-naytto").style.display="none"; valittuJasenet=0;
     await paivitaAktiiviset(); await paivitaTilanne();
   } catch(e){setViesti("Virhe: "+e.message,"error");}
   finally{btn.disabled=false;btn.textContent="Tallenna leimaus";}
@@ -439,7 +452,7 @@ const STATUS_DOT={rastilla_oma:"dot-green",tulossa:"",rastilla_muu:"dot-blue",ma
 const STATUS_LABEL={rastilla_oma:"Rastillasi",tulossa:"Tulossa ›",rastilla_muu:null,matkalla:"Matkalla",ei_aloitettu:"–"};
 const JARJESTYS=["tulossa","rastilla_oma","rastilla_muu","matkalla","ei_aloitettu"];
 
-function muotoileAika(a){if(!a)return"";return a.replace(/(\d{2}\.\d{2})\.\d{2}$/,"$1").replace(/:\d{2}$/,"");}
+function muotoileAika(a){if(!a)return"";const m=a.match(/(\d{1,2})[\.:](\d{2})[\.:](\d{2})(?:\s|$)/);return m?m[1]+":"+m[2]:a;}
 
 function renderTulossa(vartiot) {
   const nyt=new Date();
@@ -462,27 +475,38 @@ function renderTulossa(vartiot) {
     const aikaVari=diff<=-10?"color:#dc2626;font-weight:700":myohassa?"color:#ea580c;font-weight:700":"";
     const div=document.createElement("div");
     div.className="alert-item";
-    div.innerHTML=`<span><strong>${v.nimi}</strong> <span style="color:var(--muted);font-size:.85rem">(${v.jasenet} jäs.)</span></span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
+    const lahtiStr=v.aika?`<span style="color:var(--muted);font-size:.82rem"> · lähti ${muotoileAika(v.aika)}</span>`:"";
+    div.innerHTML=`<span><strong>${v.nimi}</strong> <span style="color:var(--muted);font-size:.85rem">(${v.jasenet} jäs.)</span>${lahtiStr}</span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
     lista.appendChild(div);
   });
   osio.style.display="block";
 }
 
 function renderTilanneTab(vartiot) {
-  const sorted=[...vartiot].sort((a,b)=>JARJESTYS.indexOf(a.status)-JARJESTYS.indexOf(b.status));
+  const kaynneet=vartiot.filter(v=>v.kaynut_talla_rastilla).length;
+  const total=vartiot.length;
+  document.getElementById("tilanne-laskuri").textContent=`${kaynneet} / ${total} vartioita käynyt tällä rastilla`;
+
+  const relevantit=vartiot.filter(v=>
+    v.status==="rastilla_oma" ||
+    v.status==="tulossa" ||
+    (v.status==="matkalla" && v.sijainti===rastinumero)
+  );
+  const sorted=[...relevantit].sort((a,b)=>JARJESTYS.indexOf(a.status)-JARJESTYS.indexOf(b.status));
   const lista=document.getElementById("tilanne-lista");
   const tyhja=document.getElementById("tilanne-tyhja");
   if(!sorted.length){lista.innerHTML="";tyhja.style.display="flex";return;}
   tyhja.style.display="none";
   lista.innerHTML="";
   sorted.forEach(v=>{
-    const dotColor=v.status==="tulossa"?"style='background:var(--orange)'":" ";
-    const labelStr=v.status==="rastilla_muu"?"Rasti "+v.sijainti:(STATUS_LABEL[v.status]||"");
+    const isMatkalla=v.status==="matkalla";
+    const dotColor=v.status==="tulossa"?"style='background:var(--orange)'":isMatkalla?"style='background:var(--muted)'":" ";
+    const labelStr=isMatkalla?"Lähti täältä":(STATUS_LABEL[v.status]||"");
     const labelColor=v.status==="tulossa"?"color:var(--orange);font-weight:700;":v.status==="rastilla_oma"?"color:var(--success);font-weight:700;":"color:var(--muted);";
     let meta=v.jasenet+" jäsentä";
     if(v.aika){
-      if(v.status==="rastilla_oma"||v.status==="rastilla_muu") meta+=" · sisään "+muotoileAika(v.aika);
-      else if(v.status==="tulossa"||v.status==="matkalla") meta+=" · lähti "+muotoileAika(v.aika);
+      if(v.status==="rastilla_oma") meta+=" · sisään "+muotoileAika(v.aika);
+      else if(v.status==="tulossa"||isMatkalla) meta+=" · lähti "+muotoileAika(v.aika);
     }
     if(v.arvioitu_saapuminen&&v.status==="tulossa") meta+=" · saapuu ~"+v.arvioitu_saapuminen+(v.siirtyma_lahde==="mediaani"?" 📊":" (arvio)");
     const div=document.createElement("div");

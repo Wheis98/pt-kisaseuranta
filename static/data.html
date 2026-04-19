@@ -9,49 +9,42 @@
     .table-wrap { overflow-x: auto; }
     .badge-sisaan { background:#dcfce7; color:#166534; }
     .badge-ulos { background:#fee2e2; color:#991b1b; }
+    .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+    .filter-row select, .filter-row input { padding:7px 10px; font-size:.88rem; border:1.5px solid var(--border); border-radius:6px; background:white; min-width:120px; }
   </style>
 </head>
 <body>
 <div class="header">
   <div class="header-left">
-    <span class="header-title">Leimaukset</span>
+    <span class="header-title" id="otsikko">Leimaukset</span>
     <span class="header-sub" id="count"></span>
   </div>
   <div class="header-right">
     <button class="btn btn-white btn-sm" onclick="lataa()">Päivitä</button>
-    <button class="btn btn-white btn-sm" onclick="exportCSV()">CSV ↓</button>
-    <a href="leimaus.html" class="btn btn-white btn-sm">← Takaisin</a>
-    <button class="btn-help" onclick="avaaOhje()">?</button>
-  </div>
-</div>
-<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span class="modal-title">Leimausdata — ohjeet</span>
-      <button class="modal-close" onclick="suljeMo()">×</button>
-    </div>
-    <div class="modal-body">
-      <h3>Mitä näkymä kertoo</h3>
-      <ul>
-        <li>Näyttää kaikki leimaukset uusimmasta vanhimpaan.</li>
-        <li>Käytetään tarkistamiseen ja virheiden havaitsemiseen.</li>
-      </ul>
-      <h3>Toiminnot</h3>
-      <ul>
-        <li><strong>Päivitä</strong> — hakee uusimman datan palvelimelta.</li>
-        <li><strong>CSV ↓</strong> — lataa kaikki leimaukset Excel-yhteensopivana tiedostona.</li>
-      </ul>
-      <h3>Värit</h3>
-      <ul>
-        <li>🟢 <strong>Sisään</strong> — vartio saapui rastille.</li>
-        <li>🔴 <strong>Ulos</strong> — vartio lähti rastilta.</li>
-      </ul>
-    </div>
+    <button class="btn btn-white btn-sm" id="csv-btn" onclick="exportCSV()">CSV ↓</button>
+    <a id="takaisin-btn" href="leimaus.html" class="btn btn-white btn-sm">← Takaisin</a>
   </div>
 </div>
 
 <div class="container-wide">
-  <div class="card" style="margin-top:24px;padding:0">
+  <div id="admin-filtterit" style="display:none;margin-top:24px">
+    <div class="filter-row">
+      <div>
+        <label style="display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px">Rasti</label>
+        <select id="filter-rasti" onchange="lataa()">
+          <option value="">Kaikki rastit</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:.8rem;color:var(--muted);margin-bottom:4px">Vartio</label>
+        <select id="filter-vartio" onchange="lataa()">
+          <option value="">Kaikki vartiot</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;padding:0">
     <div class="table-wrap">
       <table>
         <thead>
@@ -62,6 +55,7 @@
             <th>Jäsenet</th>
             <th>Tyyppi</th>
             <th>Aika</th>
+            <th id="th-poista" style="display:none"></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -72,49 +66,99 @@
 </div>
 
 <script>
+const token = localStorage.getItem("token");
+const adminToken = localStorage.getItem("admin_token");
+const modeRasti = new URLSearchParams(location.search).get("mode") === "rasti";
+const isAdmin = !!adminToken && !modeRasti;
+
+if (!token && !adminToken) window.location.href = "/";
+
+if (isAdmin) {
+  document.getElementById("takaisin-btn").href = "admin.html";
+  document.getElementById("admin-filtterit").style.display = "block";
+  document.getElementById("th-poista").style.display = "";
+  lataaVaihtoehdot();
+} else {
+  const rastinumero = localStorage.getItem("rastinumero");
+  if (rastinumero) document.getElementById("otsikko").textContent = "Leimaukset — Rasti " + rastinumero;
+}
+
+async function lataaVaihtoehdot() {
+  const [rastit, vartiot] = await Promise.all([
+    fetch("/api/rastit").then(r => r.json()),
+    fetch("/api/vartiot").then(r => r.json())
+  ]);
+  const rs = document.getElementById("filter-rasti");
+  rastit.forEach(r => { const o = document.createElement("option"); o.value = r.numero; o.textContent = "Rasti " + r.numero; rs.appendChild(o); });
+  const vs = document.getElementById("filter-vartio");
+  vartiot.forEach(v => { const o = document.createElement("option"); o.value = v.nimi; o.textContent = v.nimi; vs.appendChild(o); });
+}
+
 let rivit = [];
 
 async function lataa() {
   try {
-    const res = await fetch("/api/data");
-    if (!res.ok) throw new Error("Palvelinvirhe "+res.status);
+    let url, headers = {};
+    if (isAdmin) {
+      const numero = document.getElementById("filter-rasti").value;
+      const vartio = document.getElementById("filter-vartio").value;
+      url = "/api/data";
+      if (numero) url += "?numero=" + encodeURIComponent(numero);
+      if (vartio) url += (numero ? "&" : "?") + "vartio=" + encodeURIComponent(vartio);
+      headers["x-admin-token"] = adminToken;
+    } else {
+      const rastinumero = localStorage.getItem("rastinumero") || "";
+      url = "/api/data?token=" + encodeURIComponent(token) + "&numero=" + encodeURIComponent(rastinumero);
+    }
+    const res = await fetch(url, { headers });
+    if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+    if (!res.ok) throw new Error("Palvelinvirhe " + res.status);
     rivit = await res.json();
     render(rivit);
   } catch(e) {
-    const t=document.getElementById("tila"); t.textContent="Virhe: "+e.message; t.style.display="flex";
+    const t = document.getElementById("tila"); t.textContent = "Virhe: " + e.message; t.style.display = "flex";
   }
+}
+
+async function poistaLeimaus(id, tr) {
+  if (!confirm("Poistetaanko tämä leimaus?")) return;
+  const res = await fetch("/api/leimaus/" + id, { method: "DELETE", headers: { "x-admin-token": adminToken } });
+  if (res.ok) { tr.remove(); const c = document.getElementById("count"); const n = parseInt(c.textContent) - 1; c.textContent = n + " leimaust" + (n !== 1 ? "a" : ""); }
+  else { alert("Poisto epäonnistui."); }
 }
 
 function render(data) {
   const tbody = document.getElementById("tbody");
-  tbody.innerHTML="";
+  tbody.innerHTML = "";
   data.forEach(r => {
     const tr = document.createElement("tr");
     ["kayttaja","numero","vartio","jasenet"].forEach(k => {
-      const td=document.createElement("td"); td.textContent=r[k]; tr.appendChild(td);
+      const td = document.createElement("td"); td.textContent = r[k]; tr.appendChild(td);
     });
-    const tdT=document.createElement("td"); tdT.className="td-badge";
-    tdT.innerHTML=`<span class="badge ${r.tyyppi==='sisaan'?'badge-sisaan':'badge-ulos'}">${r.tyyppi==='sisaan'?'Sisään':'Ulos'}</span>`;
+    const tdT = document.createElement("td"); tdT.className = "td-badge";
+    tdT.innerHTML = `<span class="badge ${r.tyyppi==='sisaan'?'badge-sisaan':'badge-ulos'}">${r.tyyppi==='sisaan'?'Sisään':'Ulos'}</span>`;
     tr.appendChild(tdT);
-    const tdA=document.createElement("td"); tdA.textContent=r.aika; tr.appendChild(tdA);
+    const tdA = document.createElement("td"); tdA.textContent = r.aika; tr.appendChild(tdA);
+    if (isAdmin) {
+      const tdP = document.createElement("td");
+      tdP.innerHTML = `<button class="btn btn-danger btn-xs" onclick="poistaLeimaus(${r.id}, this.closest('tr'))">Poista</button>`;
+      tr.appendChild(tdP);
+    }
     tbody.appendChild(tr);
   });
-  document.getElementById("count").textContent=data.length+" leimaust"+(data.length!==1?"a":"");
+  document.getElementById("count").textContent = data.length + " leimaust" + (data.length !== 1 ? "a" : "");
 }
 
 function exportCSV() {
   if (!rivit.length) { alert("Ei dataa."); return; }
-  const header=["Käyttäjä","Rasti","Vartio","Jäsenet","Tyyppi","Aika"];
-  const rows=rivit.map(r=>[r.kayttaja,r.numero,r.vartio,r.jasenet,r.tyyppi,r.aika].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
-  const csv=[header.join(","),...rows].join("\n");
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}));
-  a.download="leimaukset.csv"; a.click();
+  const header = ["Käyttäjä","Rasti","Vartio","Jäsenet","Tyyppi","Aika"];
+  const rows = rivit.map(r => [r.kayttaja,r.numero,r.vartio,r.jasenet,r.tyyppi,r.aika].map(v => `"${String(v).replace(/"/g,'""')}"`).join(","));
+  const csv = [header.join(","), ...rows].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"}));
+  a.download = "leimaukset.csv"; a.click();
 }
 
-function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
-function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
-document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
 lataa();
 </script>
 </body>

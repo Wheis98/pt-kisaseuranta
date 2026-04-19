@@ -82,6 +82,38 @@
       Tulokset
       <span>Katso vartioiden pisteet rasteittain</span>
     </a>
+    <a class="big-btn" href="data.html">
+      Leimaukset
+      <span>Selaa ja poista leimauksia · suodata rastin tai vartion mukaan</span>
+    </a>
+
+    <hr class="divider">
+
+    <!-- Käyttöoikeudet -->
+    <div class="card">
+      <div class="card-title">Käyttöoikeudet rasteille</div>
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Valitse käyttäjä ja merkitse mitkä rastit ovat sallittuja. Jos ei yhtään valittuna → pääsy kaikkiin rasteihin.</div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Käyttäjä</label>
+        <select id="oikeus-user" onchange="lataaOikeudet()" style="width:100%;padding:8px 10px;font-size:.9rem;border:1.5px solid var(--border);border-radius:6px">
+          <option value="">— valitse käyttäjä —</option>
+        </select>
+      </div>
+      <div id="oikeus-rastit" style="display:none">
+        <div id="oikeus-checkboxes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+        <button class="btn btn-primary btn-sm" onclick="tallennaOikeudet()">Tallenna</button>
+        <button class="btn btn-ghost btn-sm" onclick="nollaaOikeudet()" style="margin-left:6px">Poista kaikki rajoitukset</button>
+        <div id="oikeus-viesti" class="msg" style="display:none;margin-top:8px"></div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Käyttöoikeuspyynnöt -->
+    <div class="card">
+      <div class="card-title">Käyttöoikeuspyynnöt <span id="pyynto-badge" style="display:none;background:var(--danger);color:#fff;border-radius:99px;font-size:.75rem;padding:2px 8px;margin-left:6px"></span></div>
+      <div id="pyynnot-lista"><span style="font-size:.85rem;color:var(--muted)">Ei pyyntöjä.</span></div>
+    </div>
 
     <hr class="divider">
 
@@ -97,6 +129,14 @@
       <div style="font-size:.78rem;color:var(--muted);margin-top:8px">
         <em>Yksittäin</em> = per-rasti hallinta rastit-sivulla
       </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Käyttäjäpyynnöt -->
+    <div class="card">
+      <div class="card-title">Uudet käyttäjäpyynnöt <span id="kayttaja-pyynto-badge" style="display:none;background:var(--danger);color:#fff;border-radius:99px;font-size:.75rem;padding:2px 8px;margin-left:6px"></span></div>
+      <div id="kayttaja-pyynnot-lista"><span style="font-size:.85rem;color:var(--muted)">Ei pyyntöjä.</span></div>
     </div>
 
     <hr class="divider">
@@ -269,12 +309,180 @@ async function asetaPisteytys(arvo) {
   await lataaAsetukset();
 }
 
-function naytaDashboard() {
+// ── Käyttöoikeudet ──
+let oikeusRastit = [];
+
+async function naytaDashboard() {
   document.getElementById("kirjautuminen").style.display="none";
   document.getElementById("dashboard").style.display="block";
   document.getElementById("logout-wrap").style.display="flex";
   lataaUsers();
   lataaAsetukset();
+  lataaOikeusKayttajat();
+  lataaOikeusPyynnot();
+  lataaKayttajaPyynnot();
+}
+
+async function lataaKayttajaPyynnot() {
+  const res = await fetch("/api/kayttaja/pyynnot", { headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  if (!res.ok) return;
+  const pyynnot = await res.json();
+  const lista = document.getElementById("kayttaja-pyynnot-lista");
+  const badge = document.getElementById("kayttaja-pyynto-badge");
+  if (!pyynnot.length) {
+    lista.innerHTML = '<span style="font-size:.85rem;color:var(--muted)">Ei pyyntöjä.</span>';
+    badge.style.display = "none"; return;
+  }
+  badge.textContent = pyynnot.length; badge.style.display = "inline";
+  lista.innerHTML = "";
+  pyynnot.forEach(p => {
+    const rasti = p.numero ? `Rasti ${p.numero}` : "—";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap";
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:600">${p.etunimi} ${p.sukunimi}</div>
+        <div style="font-size:.8rem;color:var(--muted)">Rasti: ${rasti} · ${p.aika}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-success btn-xs" onclick="hyvaksyKayttajaPyynto(${p.id},'${(p.etunimi+' '+p.sukunimi).replace(/'/g,"\\'")}')">Hyväksy</button>
+        <button class="btn btn-danger btn-xs" onclick="hylkaaKayttajaPyynto(${p.id})">Hylkää</button>
+      </div>
+    `;
+    lista.appendChild(row);
+  });
+}
+
+async function hyvaksyKayttajaPyynto(id, nimi) {
+  const res = await fetch(`/api/kayttaja/pyynto/${id}/hyvaksy`, { method: "POST", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  if (res.ok) {
+    const d = await res.json();
+    alert(`Käyttäjä "${d.nimi}" luotu! He voivat nyt kirjautua ja asettaa salasanan.`);
+    await lataaKayttajaPyynnot();
+    await lataaUsers();
+    await lataaOikeusKayttajat();
+  } else {
+    const e = await res.json(); alert("Virhe: " + e.detail);
+  }
+}
+
+async function hylkaaKayttajaPyynto(id) {
+  if (!confirm("Hylätäänkö pyyntö?")) return;
+  await fetch(`/api/kayttaja/pyynto/${id}`, { method: "DELETE", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  await lataaKayttajaPyynnot();
+}
+
+async function lataaOikeusKayttajat() {
+  const [userRes, rastiRes] = await Promise.all([
+    fetch("/api/oikeudet/admin", { headers: { "x-admin-token": localStorage.getItem("admin_token") } }),
+    fetch("/api/rastit")
+  ]);
+  if (!userRes.ok) return;
+  const users = await userRes.json();
+  oikeusRastit = await rastiRes.json();
+  const sel = document.getElementById("oikeus-user");
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— valitse käyttäjä —</option>';
+  users.forEach(u => {
+    const o = document.createElement("option");
+    o.value = u.id; o.textContent = u.nimi;
+    o.dataset.oikeudet = JSON.stringify(u.oikeudet);
+    sel.appendChild(o);
+  });
+  if (current) { sel.value = current; lataaOikeudet(); }
+}
+
+function lataaOikeudet() {
+  const sel = document.getElementById("oikeus-user");
+  const opt = sel.options[sel.selectedIndex];
+  const container = document.getElementById("oikeus-rastit");
+  if (!opt || !opt.value) { container.style.display = "none"; return; }
+  const myonnetyt = JSON.parse(opt.dataset.oikeudet || "[]");
+  const box = document.getElementById("oikeus-checkboxes");
+  box.innerHTML = "";
+  oikeusRastit.forEach(r => {
+    const label = document.createElement("label");
+    label.style.cssText = "display:flex;align-items:center;gap:8px;font-size:.9rem;cursor:pointer";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = r.id;
+    cb.checked = myonnetyt.includes(r.id);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode("Rasti " + r.numero));
+    box.appendChild(label);
+  });
+  document.getElementById("oikeus-viesti").style.display = "none";
+  container.style.display = "block";
+}
+
+async function tallennaOikeudet() {
+  const userId = document.getElementById("oikeus-user").value;
+  if (!userId) return;
+  const checkboxes = document.querySelectorAll("#oikeus-checkboxes input[type=checkbox]");
+  const rasti_ids = [...checkboxes].filter(c => c.checked).map(c => parseInt(c.value));
+  const res = await fetch("/api/oikeudet/" + userId, {
+    method: "PUT", headers: { "Content-Type": "application/json", "x-admin-token": localStorage.getItem("admin_token") },
+    body: JSON.stringify({ rasti_ids })
+  });
+  const viesti = document.getElementById("oikeus-viesti");
+  if (res.ok) {
+    viesti.textContent = rasti_ids.length ? `Tallennettu — ${rasti_ids.length} rasti(a) sallittu.` : "Tallennettu — pääsy kaikkiin rasteihin.";
+    viesti.className = "msg msg-ok"; viesti.style.display = "flex";
+    await lataaOikeusKayttajat();
+    setTimeout(() => { viesti.style.display = "none"; }, 3000);
+  } else {
+    viesti.textContent = "Tallennus epäonnistui."; viesti.className = "msg msg-error"; viesti.style.display = "flex";
+  }
+}
+
+async function nollaaOikeudet() {
+  document.querySelectorAll("#oikeus-checkboxes input[type=checkbox]").forEach(c => c.checked = false);
+  await tallennaOikeudet();
+}
+
+async function lataaOikeusPyynnot() {
+  const res = await fetch("/api/oikeus/pyynnot", { headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  if (!res.ok) return;
+  const pyynnot = await res.json();
+  const lista = document.getElementById("pyynnot-lista");
+  const badge = document.getElementById("pyynto-badge");
+  if (!pyynnot.length) {
+    lista.innerHTML = '<span style="font-size:.85rem;color:var(--muted)">Ei pyyntöjä.</span>';
+    badge.style.display = "none"; return;
+  }
+  badge.textContent = pyynnot.length; badge.style.display = "inline";
+  lista.innerHTML = "";
+  pyynnot.forEach(p => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px";
+    row.innerHTML = `
+      <span style="font-size:.9rem"><strong>${p.nimi}</strong> pyytää pääsyä: <strong>Rasti ${p.numero}</strong> <span style="color:var(--muted);font-size:.8rem">(${p.aika})</span></span>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-success btn-xs" onclick="hyvaksyPyynto(${p.id},${p.user_id},${p.rasti_id})">Hyväksy</button>
+        <button class="btn btn-danger btn-xs" onclick="hylkaaPyynto(${p.id})">Hylkää</button>
+      </div>
+    `;
+    lista.appendChild(row);
+  });
+}
+
+async function hyvaksyPyynto(pyyntoId, userId, rastiId) {
+  const sel = document.getElementById("oikeus-user");
+  sel.value = userId;
+  lataaOikeudet();
+  await new Promise(r => setTimeout(r, 50));
+  const cb = document.querySelector(`#oikeus-checkboxes input[value="${rastiId}"]`);
+  if (cb) cb.checked = true;
+  await tallennaOikeudet();
+  await poistaPyynto(pyyntoId);
+}
+
+async function hylkaaPyynto(pyyntoId) {
+  await poistaPyynto(pyyntoId);
+}
+
+async function poistaPyynto(pyyntoId) {
+  await fetch("/api/oikeus/pyynto/" + pyyntoId, { method: "DELETE", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  await lataaOikeusPyynnot();
 }
 
 function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
