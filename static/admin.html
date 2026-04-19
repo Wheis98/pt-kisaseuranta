@@ -145,7 +145,8 @@ async function luoAdmin() {
 
 async function lataaUsers() {
   const res = await fetch("/api/users", { headers: { "x-admin-token": localStorage.getItem("admin_token") } });
-  if (!res.ok) return;
+  if (res.status === 403) { localStorage.removeItem("admin_token"); location.reload(); return; }
+  if (!res.ok) { document.getElementById("user-lista").innerHTML = '<div class="msg msg-error" style="display:flex">Virhe käyttäjien latauksessa.</div>'; return; }
   const users = await res.json();
   const lista = document.getElementById("user-lista");
   if (!users.length) { lista.innerHTML = '<div class="msg msg-ok" style="display:flex">Ei käyttäjiä.</div>'; return; }
