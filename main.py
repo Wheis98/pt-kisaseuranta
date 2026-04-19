@@ -504,6 +504,9 @@ def leimaus(l: LeimausIn):
         raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
     if not l.vartio.strip():
         raise HTTPException(status_code=400, detail="Vartion nimi vaaditaan")
+    vartio_row = db.execute("SELECT id FROM vartiot WHERE nimi=?", (l.vartio.strip(),)).fetchone()
+    if not vartio_row:
+        raise HTTPException(status_code=404, detail=f"Vartiota '{l.vartio.strip()}' ei löydy — pyydä adminia luomaan vartio ensin")
     if not l.rastinumero.strip():
         raise HTTPException(status_code=400, detail="Rastinumero vaaditaan")
     if l.tyyppi not in ("sisaan", "ulos"):
@@ -875,6 +878,8 @@ def get_or_create_suoritus(vartio: str, rasti_id: int, token: str = "", x_admin_
         pass
     else:
         raise HTTPException(status_code=401, detail="Kirjaudu uudelleen")
+    if not db.execute("SELECT id FROM vartiot WHERE nimi=?", (vartio,)).fetchone():
+        raise HTTPException(status_code=404, detail=f"Vartiota '{vartio}' ei löydy")
     row = db.execute("SELECT id, kommentti FROM suoritukset WHERE vartio=? AND rasti_id=?", (vartio, rasti_id)).fetchone()
     if not row:
         from datetime import datetime
