@@ -4,7 +4,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(netstat -ano)",
       "Bash(xargs -I{} basename {})",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from app.main import app; print\\('OK', app\\)\")"
     ]
   }
 }

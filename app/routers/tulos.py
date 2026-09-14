@@ -1,17 +1,17 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, admin_sessions, sessions, SuoritusKommenttiIn, TulosIn
+from app import db, admin_sessions, sessions, SuoritusKommenttiIn, TulosIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
 
 @router.get("/pisteet.html")
 def pisteet_page():
-    return FileResponse("static/pisteet.html")
+    return FileResponse(STATIC_DIR / "pisteet.html")
 
 @router.get("/tulokset.html")
 def tulokset_page():
-    return FileResponse("static/tulokset.html")
+    return FileResponse(STATIC_DIR / "tulokset.html")
 
 @router.get("/api/suoritus")
 def get_or_create_suoritus(vartio: str, rasti_id: int, token: str = "", x_admin_token: str = Header(None)):

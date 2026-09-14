@@ -1,14 +1,14 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 import uuid
-from app import db, VartioIn
+from app import db, VartioIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
 
 @router.get("/qr.html")
 def qr_page():
-    return FileResponse("static/qr.html")
+    return FileResponse(STATIC_DIR / "qr.html")
 
 @router.get("/api/vartiot")
 def get_vartiot():

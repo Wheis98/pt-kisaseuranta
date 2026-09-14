@@ -2,17 +2,17 @@ from app.utils import vaadi_admin, laske_siirtyma_mediaanit
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import FileResponse
 import sqlite3
-from app import db, RastiIn, RastiJarjestysIn
+from app import db, RastiIn, RastiJarjestysIn, STATIC_DIR
 
 router = APIRouter()
 
 @router.get("/rasti.html")
 def rasti_page():
-    return FileResponse("static/rasti.html")
+    return FileResponse(STATIC_DIR / "rasti.html")
 
 @router.get("/rastit.html")
 def rastit_page():
-    return FileResponse("static/rastit.html")
+    return FileResponse(STATIC_DIR / "rastit.html")
 
 @router.get("/api/rastit")
 def get_rastit():

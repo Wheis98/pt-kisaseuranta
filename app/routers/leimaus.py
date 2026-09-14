@@ -1,17 +1,17 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, sessions, admin_sessions, LeimausIn
+from app import db, sessions, admin_sessions, LeimausIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
 
 @router.get("/leimaus.html")
 def leimaus_page():
-    return FileResponse("static/leimaus.html")
+    return FileResponse(STATIC_DIR / "leimaus.html")
 
 @router.get("/data.html")
 def data_page():
-    return FileResponse("static/data.html")
+    return FileResponse(STATIC_DIR / "data.html")
 
 @router.post("/api/leimaus")
 def leimaus(l: LeimausIn):

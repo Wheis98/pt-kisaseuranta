@@ -13,11 +13,11 @@ Reaaliaikainen rastihenkilöiden leimaussovellus partiotapahtumiin.
     ```
 11. Siirry sovelluksen kansioon:
     ```
-    cd kipa-new
+    cd pt-kisaseuranta
     ```
 12. Käynnistä palvelin:
     ```
-    uvicorn main:app --host 0.0.0.0 --port 8000
+    uvicorn app.main:app --host 0.0.0.0 --port 8000
     ```
 13. Avaa selaimessa: `http://localhost:8000`
 14. Mene admin-hallintaan: `http://localhost:8000/admin.html`

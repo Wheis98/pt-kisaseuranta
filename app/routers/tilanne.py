@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
-from app import db
+from app import db, STATIC_DIR
 from app.utils import laske_siirtyma_mediaanit
 
 router = APIRouter()
 
 @router.get("/tilanne.html")
 def tilanne_page():
-    return FileResponse("static/tilanne.html")
+    return FileResponse(STATIC_DIR / "tilanne.html")
 
 @router.get("/api/tilanne")
 def tilanne(numero: str = ""):

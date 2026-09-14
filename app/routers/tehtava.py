@@ -1,13 +1,13 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, TehtavaIn, OsatehtavaIn
+from app import db, TehtavaIn, OsatehtavaIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
 
 @router.get("/tehtavat.html")
 def tehtavat_page():
-    return FileResponse("static/tehtavat.html")
+    return FileResponse(STATIC_DIR / "tehtavat.html")
 
 @router.get("/api/tehtavat")
 def get_tehtavat(rasti_id: int):

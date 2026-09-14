@@ -2,14 +2,14 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import FileResponse
 import sqlite3
 import uuid
-from app import db, AdminIn, admin_sessions, sessions
+from app import db, AdminIn, admin_sessions, sessions, STATIC_DIR
 from app.utils import hash_salasana, vaadi_admin
 
 router = APIRouter()
 
 @router.get("/admin.html")
 def admin_page():
-    return FileResponse("static/admin.html")
+    return FileResponse(STATIC_DIR / "admin.html")
 
 @router.post("/api/admin/setup")
 def admin_setup(a: AdminIn):
