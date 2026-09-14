@@ -52,7 +52,6 @@
             <th>Käyttäjä</th>
             <th>Rasti</th>
             <th>Vartio</th>
-            <th>Jäsenet</th>
             <th>Tyyppi</th>
             <th>Aika</th>
             <th id="th-poista" style="display:none"></th>
@@ -132,7 +131,7 @@ function render(data) {
   tbody.innerHTML = "";
   data.forEach(r => {
     const tr = document.createElement("tr");
-    ["kayttaja","numero","vartio","jasenet"].forEach(k => {
+    ["kayttaja","numero","vartio"].forEach(k => {
       const td = document.createElement("td"); td.textContent = r[k]; tr.appendChild(td);
     });
     const tdT = document.createElement("td"); tdT.className = "td-badge";
@@ -151,8 +150,8 @@ function render(data) {
 
 function exportCSV() {
   if (!rivit.length) { alert("Ei dataa."); return; }
-  const header = ["Käyttäjä","Rasti","Vartio","Jäsenet","Tyyppi","Aika"];
-  const rows = rivit.map(r => [r.kayttaja,r.numero,r.vartio,r.jasenet,r.tyyppi,r.aika].map(v => `"${String(v).replace(/"/g,'""')}"`).join(","));
+  const header = ["Käyttäjä","Rasti","Vartio","Tyyppi","Aika"];
+  const rows = rivit.map(r => [r.kayttaja,r.numero,r.vartio,r.tyyppi,r.aika].map(v => `"${String(v).replace(/"/g,'""')}"`).join(","));
   const csv = [header.join(","), ...rows].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"}));

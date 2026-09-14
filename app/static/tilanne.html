@@ -73,15 +73,15 @@ function muotoileAika(a) {
 }
 
 function metaTeksti(v) {
-  if (v.status==="rastilla_oma") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
+  if (v.status==="rastilla_oma") return "sisään "+muotoileAika(v.aika);
   if (v.status==="tulossa") {
-    let s = v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika);
+    let s = "lähti "+muotoileAika(v.aika);
     if (v.arvioitu_saapuminen) s += " · saapuu ~"+v.arvioitu_saapuminen+(v.siirtyma_lahde==="mediaani" ? " 📊" : " (arvio)");
     return s;
   }
-  if (v.status==="rastilla_muu") return v.jasenet+" jäsentä · sisään "+muotoileAika(v.aika);
-  if (v.status==="matkalla") return v.jasenet+" jäsentä · lähti "+muotoileAika(v.aika);
-  return v.jasenet+" jäsentä";
+  if (v.status==="rastilla_muu") return "sisään "+muotoileAika(v.aika);
+  if (v.status==="matkalla") return "lähti "+muotoileAika(v.aika);
+  return "";
 }
 
 const STATUS_CLASS = { rastilla_oma:"rastilla-oma", tulossa:"tulossa", rastilla_muu:"rastilla-muu", matkalla:"matkalla", ei_aloitettu:"ei-aloitettu" };

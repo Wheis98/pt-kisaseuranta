@@ -28,7 +28,7 @@ def tilanne(numero: str = ""):
         idx = rasti_lista.index(numero)
         prev_rasti = rasti_lista[idx - 1] if idx > 0 else None
 
-    vartiot_rows = db.execute("SELECT nimi, jasenet FROM vartiot ORDER BY nimi").fetchall()
+    vartiot_rows = db.execute("SELECT nimi FROM vartiot ORDER BY nimi").fetchall()
 
     kaynneet_set = set()
     if numero:
@@ -80,7 +80,6 @@ def tilanne(numero: str = ""):
 
         result.append({
             "nimi": v["nimi"],
-            "jasenet": v["jasenet"],
             "status": status,
             "sijainti": sijainti,
             "aika": aika,

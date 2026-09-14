@@ -29,15 +29,17 @@ CREATE TABLE IF NOT EXISTS leimaukset (
   kayttaja TEXT NOT NULL,
   numero TEXT NOT NULL,
   vartio TEXT NOT NULL,
-  jasenet INTEGER NOT NULL,
   aika TEXT NOT NULL,
   tyyppi TEXT NOT NULL DEFAULT 'sisaan'
 );
 CREATE TABLE IF NOT EXISTS vartiot (
   id INTEGER PRIMARY KEY,
   nimi TEXT NOT NULL,
-  jasenet INTEGER NOT NULL,
-  token TEXT UNIQUE NOT NULL
+  token TEXT UNIQUE NOT NULL,
+  numero TEXT NOT NULL DEFAULT '',
+  sarja TEXT NOT NULL DEFAULT '',
+  lippukunta TEXT NOT NULL DEFAULT '',
+  piiri TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS admins (
   id INTEGER PRIMARY KEY,
@@ -157,6 +159,26 @@ for col, definition in [
     except Exception:
         pass
 
+# Migraatio: lisätään vartion numero, sarja, lippukunta ja piiri vanhoihin tietokantoihin
+for col in ("numero", "sarja", "lippukunta", "piiri"):
+    try:
+        db.execute(f"ALTER TABLE vartiot ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+        db.commit()
+    except Exception:
+        pass
+
+# Migraatio: poistetaan vartion koko (jäsenmäärä) käytöstä
+try:
+    db.execute("ALTER TABLE vartiot DROP COLUMN jasenet")
+    db.commit()
+except Exception:
+    pass
+try:
+    db.execute("ALTER TABLE leimaukset DROP COLUMN jasenet")
+    db.commit()
+except Exception:
+    pass
+
 # Ladataan käyttäjien tokenit muistiin käynnistyksen yhteydessä nopean autentikoinnin vuoksi
 sessions: dict = {
     row["token"]: {"nimi": row["nimi"]}
@@ -187,7 +209,6 @@ class LeimausIn(BaseModel):
     token: str
     rastinumero: str
     vartio: str
-    jasenet: int
     aika: str
     tyyppi: str = "sisaan"
     uudelleen: bool = False  # True = toinen käynti samalla rastilla hyväksytty
@@ -231,7 +252,10 @@ class AsetusIn(BaseModel):
 
 class VartioIn(BaseModel):
     nimi: str
-    jasenet: int
+    numero: str = ""
+    sarja: str = ""
+    lippukunta: str = ""
+    piiri: str = ""
 
 
 class RastiIn(BaseModel):

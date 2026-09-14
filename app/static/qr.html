@@ -26,7 +26,7 @@
     <div class="modal-body">
       <h3>Vartion luominen</h3>
       <ul>
-        <li>Syötä vartion nimi ja jäsenmäärä, paina <strong>Luo vartio</strong>.</li>
+        <li>Syötä vartion nimi, numero, sarja, lippukunta ja piiri, paina <strong>Luo vartio</strong>.</li>
         <li>Jokainen vartio saa uniikin QR-koodin.</li>
       </ul>
       <h3>QR-koodin tulostus</h3>
@@ -34,10 +34,11 @@
         <li>Uuden vartion luonnin jälkeen QR-koodi näytetään automaattisesti.</li>
         <li>Voit tulostaa QR-koodin myös olemassa olevalta vartiolta painamalla <strong>QR</strong>-nappia listassa.</li>
         <li>Kiinnitä tulostettu QR-koodi vartion kansioihin tai rintalappuun.</li>
+        <li><strong>Tulosta kaikkien QR-koodit (PDF)</strong> — avaa sivun jossa jokainen vartio on omalla sivullaan isolla QR-koodilla, nimellä ja numerolla. Tulosta tai tallenna PDF:nä selaimen tulostusvalikosta.</li>
       </ul>
       <h3>Leimauksen käyttö</h3>
       <ul>
-        <li>Rastihenkilö skannaa QR-koodin → vartion nimi ja jäsenmäärä täyttyvät automaattisesti.</li>
+        <li>Rastihenkilö skannaa QR-koodin → vartion nimi täyttyy automaattisesti.</li>
       </ul>
       <h3>Vartion poisto</h3>
       <ul>
@@ -59,8 +60,20 @@
         <input type="text" id="nimi" placeholder="esim. Ketut" autocomplete="off">
       </div>
       <div class="field">
-        <label for="jasenet">Jäsenten määrä</label>
-        <input type="number" id="jasenet" placeholder="esim. 5" min="0" inputmode="numeric">
+        <label for="numero">Vartion numero</label>
+        <input type="text" id="numero" placeholder="esim. 12" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="sarja">Sarja</label>
+        <input type="text" id="sarja" placeholder="esim. Samoajat" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="lippukunta">Lippukunta</label>
+        <input type="text" id="lippukunta" placeholder="esim. Metsän Partiolaiset" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="piiri">Piiri</label>
+        <input type="text" id="piiri" placeholder="esim. Hämeen Partiopiiri" autocomplete="off">
       </div>
       <button class="btn btn-primary btn-block" id="btn" onclick="luoVartio()">Luo vartio</button>
     </div>
@@ -70,6 +83,10 @@
       <div class="card-title">Luodut vartiot</div>
       <div id="vartio-lista"></div>
     </div>
+
+    <div class="link-group">
+      <a class="nav-link" href="vartiot-tulosta.html" target="_blank">Tulosta kaikkien QR-koodit (PDF)</a>
+    </div>
   </div>
 
   <!-- QR tulos -->
@@ -77,7 +94,7 @@
     <div class="msg msg-ok">Vartio luotu onnistuneesti!</div>
     <div class="qr-card" style="display:inline-block;margin:16px 0">
       <h3 id="tulos-nimi"></h3>
-      <p id="tulos-jasenet"></p>
+      <p id="tulos-lisatiedot"></p>
       <div id="qr-koodi"></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
@@ -95,15 +112,16 @@ function adminHeaders() { return { "Content-Type": "application/json", "x-admin-
 
 async function luoVartio() {
   const nimi = document.getElementById("nimi").value.trim();
-  const jasetVal = document.getElementById("jasenet").value;
-  const jasenet = parseInt(jasetVal);
+  const numero = document.getElementById("numero").value.trim();
+  const sarja = document.getElementById("sarja").value.trim();
+  const lippukunta = document.getElementById("lippukunta").value.trim();
+  const piiri = document.getElementById("piiri").value.trim();
   const virhe = document.getElementById("virhe");
   virhe.style.display="none";
   if (!nimi) { virhe.textContent="Syötä vartion nimi."; virhe.style.display="flex"; return; }
-  if (jasetVal===""||isNaN(jasenet)||jasenet<0) { virhe.textContent="Syötä jäsenten määrä."; virhe.style.display="flex"; return; }
   const btn = document.getElementById("btn");
   btn.disabled=true; btn.textContent="Tallennetaan…";
-  const res = await fetch("/api/vartio", { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi,jasenet}) });
+  const res = await fetch("/api/vartio", { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi,numero,sarja,lippukunta,piiri}) });
   if (!res.ok) {
     if (res.status===403) { window.location.href="/admin.html"; return; }
     virhe.textContent="Virhe tallennuksessa."; virhe.style.display="flex";
@@ -115,7 +133,13 @@ async function luoVartio() {
 
 function naytaQR(vartio) {
   document.getElementById("tulos-nimi").textContent = vartio.nimi;
-  document.getElementById("tulos-jasenet").textContent = vartio.jasenet+" jäsentä";
+  const lisatiedot = [
+    vartio.numero ? "Numero "+vartio.numero : "",
+    vartio.sarja || "",
+    vartio.lippukunta || "",
+    vartio.piiri || "",
+  ].filter(Boolean).join(" · ");
+  document.getElementById("tulos-lisatiedot").textContent = lisatiedot;
   document.getElementById("qr-koodi").innerHTML = "";
   new QRCode(document.getElementById("qr-koodi"), { text:vartio.token, width:200, height:200, correctLevel:QRCode.CorrectLevel.M });
   document.getElementById("lomake-osio").style.display="none";
@@ -127,7 +151,9 @@ function tulostaQR(v) {
 }
 
 function uusiVartio() {
-  document.getElementById("nimi").value=""; document.getElementById("jasenet").value="";
+  document.getElementById("nimi").value="";
+  document.getElementById("numero").value=""; document.getElementById("sarja").value="";
+  document.getElementById("lippukunta").value=""; document.getElementById("piiri").value="";
   const btn=document.getElementById("btn"); btn.disabled=false; btn.textContent="Luo vartio";
   document.getElementById("tulos").style.display="none";
   document.getElementById("lomake-osio").style.display="block";
@@ -142,11 +168,17 @@ async function lataaLista() {
   lista.forEach(v => {
     const item = document.createElement("div");
     item.className="list-item";
+    const lisatiedot = [
+      v.numero ? "Nro "+v.numero : "",
+      v.sarja || "",
+      v.lippukunta || "",
+      v.piiri || "",
+    ].filter(Boolean).join(" · ");
     item.innerHTML=`
       <div class="dot dot-blue"></div>
       <div style="flex:1">
         <div class="list-item-name">${v.nimi}</div>
-        <div class="list-item-meta">${v.jasenet} jäsentä</div>
+        <div class="list-item-meta">${lisatiedot || "&nbsp;"}</div>
       </div>
       <button class="btn btn-ghost btn-xs" onclick='tulostaQR(${JSON.stringify(v)})'>QR</button>
       <button class="btn btn-danger btn-xs" onclick="poista(${v.id})">Poista</button>

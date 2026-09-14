@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Tulosta QR-koodit</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    .sivu {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      min-height: 90vh;
+      page-break-after: always;
+      break-after: page;
+    }
+    .sivu:last-child { page-break-after: auto; break-after: auto; }
+    .kortti {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      border: 1px dashed #cbd5e1;
+    }
+    .kortti-qr { margin-bottom: 10px; }
+    .kortti-nimi { font-size: 1.15rem; font-weight: 800; margin-bottom: 4px; }
+    .kortti-numero { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+    #lataus { text-align: center; margin-top: 40px; color: var(--muted); }
+    @media print {
+      body { background: white; }
+      .kortti-numero { color: #333; }
+      .kortti { border-color: #999; }
+    }
+  </style>
+</head>
+<body>
+<div class="header no-print">
+  <div class="header-left">
+    <span class="header-title">Tulosta QR-koodit</span>
+  </div>
+  <div class="header-right">
+    <a href="qr.html" class="btn btn-white btn-sm">← Vartiot</a>
+    <button class="btn btn-primary btn-sm" onclick="window.print()">Tulosta / Tallenna PDF</button>
+  </div>
+</div>
+
+<div id="lataus">Ladataan vartioita…</div>
+<div id="sivut"></div>
+
+<script>
+const PER_SIVU = 4;
+
+async function lataaJaRenderoi() {
+  const res = await fetch("/api/vartiot");
+  const vartiot = await res.json();
+  const lataus = document.getElementById("lataus");
+  const sivut = document.getElementById("sivut");
+  if (!vartiot.length) { lataus.textContent = "Ei vartioita."; return; }
+  lataus.style.display = "none";
+
+  for (let i = 0; i < vartiot.length; i += PER_SIVU) {
+    const sivu = document.createElement("div");
+    sivu.className = "sivu";
+    vartiot.slice(i, i + PER_SIVU).forEach(v => {
+      const kortti = document.createElement("div");
+      kortti.className = "kortti";
+      const qrDiv = document.createElement("div");
+      qrDiv.className = "kortti-qr";
+      kortti.appendChild(qrDiv);
+      const nimiDiv = document.createElement("div");
+      nimiDiv.className = "kortti-nimi";
+      nimiDiv.textContent = v.nimi;
+      kortti.appendChild(nimiDiv);
+      if (v.numero) {
+        const numeroDiv = document.createElement("div");
+        numeroDiv.className = "kortti-numero";
+        numeroDiv.textContent = "Numero " + v.numero;
+        kortti.appendChild(numeroDiv);
+      }
+      sivu.appendChild(kortti);
+      new QRCode(qrDiv, { text: v.token, width: 150, height: 150, correctLevel: QRCode.CorrectLevel.M });
+    });
+    sivut.appendChild(sivu);
+  }
+}
+lataaJaRenderoi();
+</script>
+</body>
+</html>

@@ -43,8 +43,8 @@ def leimaus(l: LeimausIn):
             if aiempi_ulos:
                 raise HTTPException(status_code=409, detail=f"uudelleen_kaynti:{l.vartio.strip()}")
     db.execute(
-        "INSERT INTO leimaukset (kayttaja, numero, vartio, jasenet, aika, tyyppi) VALUES (?,?,?,?,?,?)",
-        (session["nimi"], l.rastinumero.strip(), l.vartio.strip(), l.jasenet, l.aika, l.tyyppi),
+        "INSERT INTO leimaukset (kayttaja, numero, vartio, aika, tyyppi) VALUES (?,?,?,?,?)",
+        (session["nimi"], l.rastinumero.strip(), l.vartio.strip(), l.aika, l.tyyppi),
     )
     db.commit()
     return {"ok": True}
@@ -54,7 +54,7 @@ def aktiiviset(numero: str):
     # Palauttaa vartiot jotka ovat tällä hetkellä sisään leimattuina tietylle rastille.
     # Subquery varmistaa että otetaan vain viimeisin leimaus per vartio+rasti-pari.
     rows = db.execute("""
-        SELECT vartio, jasenet, aika FROM leimaukset l1
+        SELECT vartio, aika FROM leimaukset l1
         WHERE numero = ? AND tyyppi = 'sisaan'
         AND id = (
             SELECT MAX(id) FROM leimaukset l2
@@ -67,7 +67,7 @@ def aktiiviset(numero: str):
 @router.get("/api/data")
 def get_data(token: str = "", numero: str = "", vartio: str = "", x_admin_token: str = Header(None)):
     if x_admin_token and x_admin_token in admin_sessions:
-        query = "SELECT id, kayttaja, numero, vartio, jasenet, aika, tyyppi FROM leimaukset WHERE 1=1"
+        query = "SELECT id, kayttaja, numero, vartio, aika, tyyppi FROM leimaukset WHERE 1=1"
         params: list = []
         if numero:
             query += " AND numero=?"; params.append(numero)
@@ -80,7 +80,7 @@ def get_data(token: str = "", numero: str = "", vartio: str = "", x_admin_token:
             raise HTTPException(status_code=401, detail="Tuntematon istunto")
         if not numero:
             raise HTTPException(status_code=400, detail="Rastinumero vaaditaan")
-        query = "SELECT id, kayttaja, numero, vartio, jasenet, aika, tyyppi FROM leimaukset WHERE numero=? ORDER BY id DESC"
+        query = "SELECT id, kayttaja, numero, vartio, aika, tyyppi FROM leimaukset WHERE numero=? ORDER BY id DESC"
         params = [numero]
     else:
         raise HTTPException(status_code=401, detail="Kirjaudu uudelleen")

@@ -38,9 +38,9 @@
       <ul>
         <li><strong>Rastilla nyt</strong> — vartiot jotka ovat tällä hetkellä sisäänleimattuna rastillesi.</li>
         <li>Paina <strong>Ulos</strong> kun vartio lähtee rastilta.</li>
-        <li><strong>QR-koodi</strong> — skannaa vartion QR-koodi, jolloin nimi ja jäsenmäärä täyttyvät automaattisesti.</li>
+        <li><strong>QR-koodi</strong> — skannaa vartion QR-koodi, jolloin nimi täyttyy automaattisesti.</li>
         <li><strong>Manuaalinen</strong> — kirjoita vartion nimi käsin autocomplete-haulla.</li>
-        <li>Tarkista jäsenmäärä ja paina <strong>Tallenna leimaus</strong>.</li>
+        <li>Paina <strong>Tallenna leimaus</strong>.</li>
       </ul>
       <h3>Tilanne-välilehti</h3>
       <ul>
@@ -112,7 +112,6 @@
           <input type="text" id="vartio" placeholder="Kirjoita vartion nimi..." autocomplete="off">
           <div id="ac-lista" class="ac-list" style="display:none"></div>
         </div>
-        <div id="jasenet-naytto" style="display:none;font-size:.9rem;color:var(--muted);margin-bottom:8px">Jäseniä: <strong id="jasenet-arvo"></strong></div>
         <div class="field">
           <label for="aika">Aikaleima</label>
           <input type="text" id="aika" readonly>
@@ -158,7 +157,6 @@ document.getElementById("kayttaja-info").textContent = nimi;
 let qrScanner = null;
 let vartioData = [];
 let acValittu = -1;
-let valittuJasenet = 0;
 
 function aikaleima() { return new Date().toLocaleString("fi-FI"); }
 
@@ -190,9 +188,6 @@ async function lataaVartiot() {
 }
 function valitseVartio(v) {
   document.getElementById("vartio").value = v.nimi;
-  valittuJasenet = v.jasenet;
-  document.getElementById("jasenet-arvo").textContent = v.jasenet;
-  document.getElementById("jasenet-naytto").style.display = "block";
   document.getElementById("aika").value = aikaleima();
   suljeAC();
 }
@@ -206,7 +201,8 @@ function naytaAC(haku) {
   osumat.forEach((v,i) => {
     const div = document.createElement("div");
     div.dataset.idx=i;
-    div.innerHTML=`<span>${v.nimi}</span><span class="ac-sub">${v.jasenet} jäsentä</span>`;
+    const sub = [v.numero ? "Nro "+v.numero : "", v.lippukunta || ""].filter(Boolean).join(" · ");
+    div.innerHTML=`<span>${v.nimi}</span><span class="ac-sub">${sub}</span>`;
     div.addEventListener("mousedown", e => { e.preventDefault(); valitseVartio(v); });
     lista.appendChild(div);
   });
@@ -316,9 +312,9 @@ async function paivitaAktiiviset() {
         <div class="dot dot-green"></div>
         <div class="active-item-info">
           <div class="active-item-name">${v.vartio}</div>
-          <div class="active-item-meta">${v.jasenet} jäsentä · ${v.aika}</div>
+          <div class="active-item-meta">${v.aika}</div>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="leimaaUlos('${vEsc}',${v.jasenet},this)">Ulos</button>
+        <button class="btn btn-danger btn-sm" onclick="leimaaUlos('${vEsc}',this)">Ulos</button>
       </div>
       ${timerHTML}
     `;
@@ -327,12 +323,12 @@ async function paivitaAktiiviset() {
   });
 }
 
-let uudelleenVartio=null, uudelleenJasenet=null;
+let uudelleenVartio=null;
 
-async function leimaaUlos(vartio, jasenet, btn) {
+async function leimaaUlos(vartio, btn) {
   btn.disabled=true; btn.textContent="…";
   try {
-    const res = await fetch("/api/leimaus", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio,jasenet,aika:aikaleima(),tyyppi:"ulos"}) });
+    const res = await fetch("/api/leimaus", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"ulos"}) });
     if (!res.ok) { const e=await res.json(); if(res.status===401){localStorage.clear();window.location.href="/";return;} throw new Error(e.detail); }
     pysaytaAjastin(vartio);
     if (pisteytysAktiivinen && rastiId) naytaPisteytysPrompt(vartio);
@@ -355,27 +351,27 @@ function naytaPisteytysPrompt(vartio) {
 
 function hyvaksyUudelleen() {
   document.getElementById("uudelleen-modal").style.display="none";
-  if (uudelleenVartio) tallennaLeimausUudelleen(uudelleenVartio, uudelleenJasenet);
+  if (uudelleenVartio) tallennaLeimausUudelleen(uudelleenVartio);
 }
 function peruutaUudelleen() {
   document.getElementById("uudelleen-modal").style.display="none";
-  uudelleenVartio=null; uudelleenJasenet=null;
+  uudelleenVartio=null;
   const btn=document.getElementById("tallenna-btn"); btn.disabled=false; btn.textContent="Tallenna leimaus";
 }
-async function tallennaLeimausUudelleen(vartio, jasenet) {
+async function tallennaLeimausUudelleen(vartio) {
   const btn=document.getElementById("tallenna-btn");
   btn.disabled=true; btn.textContent="Tallennetaan…";
   try {
     const aika=document.getElementById("aika").value||aikaleima();
-    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,jasenet,aika,tyyppi:"sisaan",uudelleen:true})});
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan",uudelleen:true})});
     if(!res.ok){const e=await res.json();if(res.status===401){localStorage.clear();window.location.href="/";return;}throw new Error(e.detail);}
     setViesti("Tallennettu!","ok");
     document.getElementById("vartio").value=""; document.getElementById("aika").value="";
     document.getElementById("man-btn").classList.remove("active"); document.getElementById("qr-btn").classList.remove("active");
-    document.getElementById("sisaan-kentat").style.display="none"; document.getElementById("jasenet-naytto").style.display="none"; valittuJasenet=0;
+    document.getElementById("sisaan-kentat").style.display="none";
     await paivitaAktiiviset(); await paivitaTilanne();
   } catch(e){setViesti("Virhe: "+e.message,"error");}
-  finally{btn.disabled=false;btn.textContent="Tallenna leimaus"; uudelleenVartio=null; uudelleenJasenet=null;}
+  finally{btn.disabled=false;btn.textContent="Tallenna leimaus"; uudelleenVartio=null;}
 }
 
 // ── QR ──
@@ -401,7 +397,7 @@ async function avaaQR() {
     await qrScanner.start(kameraId||{facingMode:"environment"},{fps:10,qrbox:250},async(text)=>{
       qrScanner.stop().then(()=>{qrScanner=null;});
       const res=await fetch("/api/vartio/"+encodeURIComponent(text));
-      if(res.ok){const v=await res.json();document.getElementById("vartio").value=v.nimi;valittuJasenet=v.jasenet;document.getElementById("jasenet-arvo").textContent=v.jasenet;document.getElementById("jasenet-naytto").style.display="block";}
+      if(res.ok){const v=await res.json();document.getElementById("vartio").value=v.nimi;}
       else{setViesti("QR-koodia ei tunnistettu.","error");return;}
       document.getElementById("aika").value=aikaleima();
       document.getElementById("sisaan-kentat").style.display="block";
@@ -418,19 +414,18 @@ async function avaaQR() {
 // ── Tallenna ──
 async function tallennaLeimaus() {
   const vartio=document.getElementById("vartio").value.trim();
-  const jasenet=valittuJasenet;
   const aika=document.getElementById("aika").value||aikaleima();
   setViesti("","");
   if(!vartio){setViesti("Syötä vartion nimi.","error");return;}
   const btn=document.getElementById("tallenna-btn");
   btn.disabled=true; btn.textContent="Tallennetaan…";
   try {
-    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,jasenet,aika,tyyppi:"sisaan"})});
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan"})});
     if(!res.ok){
       const e=await res.json();
       if(res.status===401){localStorage.clear();window.location.href="/";return;}
       if(res.status===409&&e.detail.startsWith("uudelleen_kaynti:")){
-        uudelleenVartio=vartio; uudelleenJasenet=jasenet;
+        uudelleenVartio=vartio;
         document.getElementById("uudelleen-teksti").textContent=`${vartio} on jo aiemmin käynyt tällä rastilla. Hyväksytäänkö uudelleen käynti?`;
         document.getElementById("uudelleen-modal").style.display="flex";
         return;
@@ -440,7 +435,7 @@ async function tallennaLeimaus() {
     setViesti("Tallennettu!","ok");
     document.getElementById("vartio").value=""; document.getElementById("aika").value="";
     document.getElementById("man-btn").classList.remove("active"); document.getElementById("qr-btn").classList.remove("active");
-    document.getElementById("sisaan-kentat").style.display="none"; document.getElementById("jasenet-naytto").style.display="none"; valittuJasenet=0;
+    document.getElementById("sisaan-kentat").style.display="none";
     await paivitaAktiiviset(); await paivitaTilanne();
   } catch(e){setViesti("Virhe: "+e.message,"error");}
   finally{btn.disabled=false;btn.textContent="Tallenna leimaus";}
@@ -476,7 +471,7 @@ function renderTulossa(vartiot) {
     const div=document.createElement("div");
     div.className="alert-item";
     const lahtiStr=v.aika?`<span style="color:var(--muted);font-size:.82rem"> · lähti ${muotoileAika(v.aika)}</span>`:"";
-    div.innerHTML=`<span><strong>${v.nimi}</strong> <span style="color:var(--muted);font-size:.85rem">(${v.jasenet} jäs.)</span>${lahtiStr}</span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
+    div.innerHTML=`<span><strong>${v.nimi}</strong>${lahtiStr}</span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
     lista.appendChild(div);
   });
   osio.style.display="block";
@@ -503,12 +498,12 @@ function renderTilanneTab(vartiot) {
     const dotColor=v.status==="tulossa"?"style='background:var(--orange)'":isMatkalla?"style='background:var(--muted)'":" ";
     const labelStr=isMatkalla?"Lähti täältä":(STATUS_LABEL[v.status]||"");
     const labelColor=v.status==="tulossa"?"color:var(--orange);font-weight:700;":v.status==="rastilla_oma"?"color:var(--success);font-weight:700;":"color:var(--muted);";
-    let meta=v.jasenet+" jäsentä";
+    let meta="";
     if(v.aika){
-      if(v.status==="rastilla_oma") meta+=" · sisään "+muotoileAika(v.aika);
-      else if(v.status==="tulossa"||isMatkalla) meta+=" · lähti "+muotoileAika(v.aika);
+      if(v.status==="rastilla_oma") meta="sisään "+muotoileAika(v.aika);
+      else if(v.status==="tulossa"||isMatkalla) meta="lähti "+muotoileAika(v.aika);
     }
-    if(v.arvioitu_saapuminen&&v.status==="tulossa") meta+=" · saapuu ~"+v.arvioitu_saapuminen+(v.siirtyma_lahde==="mediaani"?" 📊":" (arvio)");
+    if(v.arvioitu_saapuminen&&v.status==="tulossa") meta+=(meta?" · ":"")+"saapuu ~"+v.arvioitu_saapuminen+(v.siirtyma_lahde==="mediaani"?" 📊":" (arvio)");
     const div=document.createElement("div");
     div.className="status-card "+(STATUS_CLASS[v.status]||"");
     div.innerHTML=`
