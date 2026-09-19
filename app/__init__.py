@@ -1,12 +1,14 @@
 from pathlib import Path
 from pydantic import BaseModel
+import os
 import sqlite3
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 # Yhdistetään SQLite-tietokantaan. check_same_thread=False sallii saman yhteyden eri säikeistä.
-db = sqlite3.connect(BASE_DIR.parent / "kipa.db", check_same_thread=False)
+# KIPA_DB-ympäristömuuttujalla voi käyttää toista tietokantaa (esim. testaukseen).
+db = sqlite3.connect(os.environ.get("KIPA_DB") or BASE_DIR.parent / "kipa.db", check_same_thread=False)
 db.row_factory = sqlite3.Row  # palauttaa rivit dict-tyylisesti nimen perusteella
 
 # Luodaan taulut jos niitä ei vielä ole

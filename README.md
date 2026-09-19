@@ -28,6 +28,17 @@ Reaaliaikainen rastihenkilöiden leimaussovellus partiotapahtumiin.
 19. Rastihenkilöt kirjautuvat etusivulta omalla nimellään ja salasanallaan.
 20. Valittuaan rastin he voivat leimat vartioita sisään ja ulos.
 
+## Testaus erillisellä tietokannalla
+
+Testivartioita ja -leimauksia varten on oma tietokanta `kipa-testi.db`, jotta oikea `kipa.db` ei muutu:
+
+```
+.\testi.ps1            # käynnistää portissa 8001
+.\testi.ps1 -Nollaa    # poistaa testidatan ja aloittaa puhtaalta pöydältä
+```
+
+Testitila luo admin-tunnukset ja vartiot alusta. Sama toimii käsin: aseta ympäristömuuttuja `KIPA_DB` tietokantatiedoston polkuun ennen uvicornin käynnistystä.
+
 ## Julkaisu verkkoon (ngrok)
 
 Käynnistä palvelin (kohta 12), ja sen jälkeen toisessa terminaalissa:
