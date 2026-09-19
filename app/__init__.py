@@ -179,6 +179,17 @@ try:
 except Exception:
     pass
 
+# Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
+db.execute("""
+CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
+BEFORE UPDATE OF token ON vartiot
+WHEN NEW.token IS NOT OLD.token
+BEGIN
+  SELECT RAISE(ABORT, 'Vartion token on lukittu');
+END
+""")
+db.commit()
+
 # Ladataan käyttäjien tokenit muistiin käynnistyksen yhteydessä nopean autentikoinnin vuoksi
 sessions: dict = {
     row["token"]: {"nimi": row["nimi"]}
