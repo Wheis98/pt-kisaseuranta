@@ -1,6 +1,6 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, sessions, admin_sessions, LeimausIn, STATIC_DIR
+from app import db, sessions, admin_sessions, LeimausIn, JonoIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
@@ -46,6 +46,44 @@ def leimaus(l: LeimausIn):
         "INSERT INTO leimaukset (kayttaja, numero, vartio, aika, tyyppi) VALUES (?,?,?,?,?)",
         (session["nimi"], l.rastinumero.strip(), l.vartio.strip(), l.aika, l.tyyppi),
     )
+    if l.tyyppi == "sisaan":
+        # Rastille otettu vartio poistuu tämän rastin jonosta
+        db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip()))
+    db.commit()
+    return {"ok": True}
+
+@router.post("/api/jono")
+def lisaa_jonoon(j: JonoIn):
+    # Lisää vartion rastin jonoon odottamaan rastille pääsyä
+    if not sessions.get(j.token):
+        raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
+    vartio = j.vartio.strip()
+    numero = j.rastinumero.strip()
+    if not vartio or not numero:
+        raise HTTPException(status_code=400, detail="Vartion nimi ja rastinumero vaaditaan")
+    if not db.execute("SELECT id FROM vartiot WHERE nimi=?", (vartio,)).fetchone():
+        raise HTTPException(status_code=404, detail=f"Vartiota '{vartio}' ei löydy — pyydä adminia luomaan vartio ensin")
+    viimeisin = db.execute(
+        "SELECT numero, tyyppi FROM leimaukset WHERE vartio=? ORDER BY id DESC LIMIT 1", (vartio,)
+    ).fetchone()
+    if viimeisin and viimeisin["tyyppi"] == "sisaan":
+        raise HTTPException(status_code=409, detail=f"{vartio} on jo rastilla {viimeisin['numero']}")
+    if db.execute("SELECT id FROM jono WHERE numero=? AND vartio=?", (numero, vartio)).fetchone():
+        raise HTTPException(status_code=409, detail=f"{vartio} on jo jonossa")
+    db.execute("INSERT INTO jono (numero, vartio, aika) VALUES (?,?,?)", (numero, vartio, j.aika))
+    db.commit()
+    return {"ok": True}
+
+@router.get("/api/jono")
+def hae_jono(numero: str):
+    rows = db.execute("SELECT id, vartio, aika FROM jono WHERE numero=? ORDER BY id", (numero,)).fetchall()
+    return [dict(r) for r in rows]
+
+@router.delete("/api/jono/{jono_id}")
+def poista_jonosta(jono_id: int, token: str):
+    if not sessions.get(token):
+        raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
+    db.execute("DELETE FROM jono WHERE id=?", (jono_id,))
     db.commit()
     return {"ok": True}
 

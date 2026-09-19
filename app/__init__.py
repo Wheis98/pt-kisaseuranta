@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS pisteytetyt_kaynnit (
   leimaus_id INTEGER NOT NULL,
   PRIMARY KEY (vartio, rasti_id)
 );
+CREATE TABLE IF NOT EXISTS jono (
+  id INTEGER PRIMARY KEY,
+  numero TEXT NOT NULL,
+  vartio TEXT NOT NULL,
+  aika TEXT NOT NULL,
+  UNIQUE(numero, vartio)
+);
 CREATE TABLE IF NOT EXISTS kayttaja_pyynnot (
   id INTEGER PRIMARY KEY,
   etunimi TEXT NOT NULL,
@@ -223,6 +230,12 @@ class AsetaSalasanaIn(BaseModel):
     nimi: str
     salasana: str
 
+
+class JonoIn(BaseModel):
+    token: str
+    rastinumero: str
+    vartio: str
+    aika: str
 
 class LeimausIn(BaseModel):
     token: str

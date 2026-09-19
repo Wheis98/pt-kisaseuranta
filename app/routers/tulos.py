@@ -164,4 +164,10 @@ def _vartio_tulokset(vartio: str) -> dict:
             "kommentti": s["kommentti"],
             "tehtavat": tehtavat_data,
         })
-    return {"vartio": vartio, "rastit": rasti_data}
+    vrow = db.execute("SELECT sarja, numero FROM vartiot WHERE nimi=?", (vartio,)).fetchone()
+    return {
+        "vartio": vartio,
+        "sarja": vrow["sarja"] if vrow else "",
+        "numero": vrow["numero"] if vrow else "",
+        "rastit": rasti_data,
+    }

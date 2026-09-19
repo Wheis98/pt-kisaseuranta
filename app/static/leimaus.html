@@ -40,7 +40,8 @@
         <li>Paina <strong>Ulos</strong> kun vartio lähtee rastilta.</li>
         <li><strong>QR-koodi</strong> — skannaa vartion QR-koodi, jolloin nimi täyttyy automaattisesti.</li>
         <li><strong>Manuaalinen</strong> — kirjoita vartion nimi käsin autocomplete-haulla.</li>
-        <li>Paina <strong>Tallenna leimaus</strong>.</li>
+        <li>Paina <strong>Tallenna leimaus</strong> viedäksesi vartion suoraan rastille, tai <strong>Lisää jonoon</strong> jos rasti on varattu.</li>
+        <li><strong>Jonossa</strong> — jonossa olevat vartiot; paina <strong>Rastille</strong> kun vartio pääsee rastille, tai ✕ poistaaksesi jonosta.</li>
       </ul>
       <h3>Tilanne-välilehti</h3>
       <ul>
@@ -104,6 +105,12 @@
       <div id="ei-aktiivisia" class="msg msg-ok" style="display:none">Ei aktiivisia vartioita</div>
     </div>
 
+    <!-- Jonossa -->
+    <div class="card" id="jono-kortti" style="display:none">
+      <div class="card-title">Jonossa</div>
+      <div id="jono-lista"></div>
+    </div>
+
     <!-- Leimaa sisään -->
     <div class="card">
       <div class="card-title">Leimaa sisään</div>
@@ -124,6 +131,7 @@
         </div>
         <div id="viesti" style="display:none" class="msg"></div>
         <button class="btn btn-success btn-block" id="tallenna-btn" onclick="tallennaLeimaus()">Tallenna leimaus</button>
+        <button class="btn btn-ghost btn-block" id="jono-btn" style="margin-top:8px" onclick="lisaaJonoon()">Lisää jonoon</button>
       </div>
     </div>
 
@@ -176,7 +184,7 @@ function vaihdaTab(nimi) {
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-"+nimi).classList.add("active");
   if (nimi==="tilanne") paivitaTilanne();
-  else { paivitaAktiiviset(); paivitaPisteetOdottavat(); }
+  else { paivitaAktiiviset(); paivitaPisteetOdottavat(); paivitaJono(); }
 }
 
 // ── Viesti ──
@@ -462,6 +470,75 @@ async function tallennaLeimaus() {
   finally{btn.disabled=false;btn.textContent="Tallenna leimaus";}
 }
 
+// ── Jono ──
+async function paivitaJono() {
+  const res = await fetch("/api/jono?numero="+encodeURIComponent(rastinumero));
+  if (!res.ok) return;
+  const lista = await res.json();
+  const kortti = document.getElementById("jono-kortti");
+  const div = document.getElementById("jono-lista");
+  div.innerHTML = "";
+  kortti.style.display = lista.length ? "" : "none";
+  lista.forEach((v, i) => {
+    const item = document.createElement("div");
+    item.className = "active-item";
+    item.innerHTML = `
+      <div class="active-item-info">
+        <div class="active-item-name"></div>
+        <div class="active-item-meta">jonossa ${i+1}. · ${v.aika}</div>
+      </div>
+      <button class="btn btn-success btn-sm">Rastille</button>
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px">✕</button>`;
+    item.querySelector(".active-item-name").textContent = v.vartio;
+    const [rastilleBtn, poistaBtn] = item.querySelectorAll("button");
+    rastilleBtn.onclick = () => otaJonosta(v.vartio, rastilleBtn);
+    poistaBtn.onclick = () => poistaJonosta(v.id, poistaBtn);
+    div.appendChild(item);
+  });
+}
+
+async function lisaaJonoon() {
+  const vartio=document.getElementById("vartio").value.trim();
+  const aika=document.getElementById("aika").value||aikaleima();
+  setViesti("","");
+  if(!vartio){setViesti("Syötä vartion nimi.","error");return;}
+  const btn=document.getElementById("jono-btn");
+  btn.disabled=true;
+  try {
+    const res=await fetch("/api/jono",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika})});
+    if(!res.ok){const e=await res.json();if(res.status===401){localStorage.clear();window.location.href="/";return;}throw new Error(e.detail);}
+    setViesti("Lisätty jonoon!","ok");
+    document.getElementById("vartio").value=""; document.getElementById("aika").value="";
+    document.getElementById("man-btn").classList.remove("active"); document.getElementById("qr-btn").classList.remove("active");
+    document.getElementById("sisaan-kentat").style.display="none";
+    await paivitaJono();
+  } catch(e){setViesti("Virhe: "+e.message,"error");}
+  finally{btn.disabled=false;}
+}
+
+async function otaJonosta(vartio, btn, uudelleen=false) {
+  btn.disabled=true;
+  try {
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"sisaan",uudelleen})});
+    if(!res.ok){
+      const e=await res.json();
+      if(res.status===401){localStorage.clear();window.location.href="/";return;}
+      if(res.status===409&&e.detail.startsWith("uudelleen_kaynti:")){
+        if(confirm(`${vartio} on jo aiemmin käynyt tällä rastilla. Hyväksytäänkö uudelleen käynti?`)) return otaJonosta(vartio, btn, true);
+        btn.disabled=false; return;
+      }
+      throw new Error(e.detail);
+    }
+    await Promise.allSettled([paivitaJono(), paivitaAktiiviset(), paivitaTilanne()]);
+  } catch(e){setViesti("Virhe: "+e.message,"error"); btn.disabled=false;}
+}
+
+async function poistaJonosta(id, btn) {
+  btn.disabled=true;
+  await fetch(`/api/jono/${id}?token=${encodeURIComponent(token)}`,{method:"DELETE"});
+  await paivitaJono();
+}
+
 // ── Tilanne (tulossa + välilehti) ──
 const STATUS_CLASS={rastilla_oma:"rastilla-oma",tulossa:"tulossa",rastilla_muu:"rastilla-muu",matkalla:"matkalla",ei_aloitettu:"ei-aloitettu"};
 const STATUS_DOT={rastilla_oma:"dot-green",tulossa:"",rastilla_muu:"dot-blue",matkalla:"dot-gray",ei_aloitettu:"dot-light"};
@@ -560,10 +637,10 @@ async function init() {
     rastiId = rasti.id; // luotettavampi kuin selaimen muistiin tallennettu arvo
     localStorage.setItem("rasti_id", rasti.id);
   }
-  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), lataaVartiot(), paivitaPisteetOdottavat()]);
+  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), lataaVartiot(), paivitaPisteetOdottavat(), paivitaJono()]);
 }
 init();
-function paivitaKaikki() { paivitaAktiiviset(); paivitaTilanne(); paivitaPisteetOdottavat(); }
+function paivitaKaikki() { paivitaAktiiviset(); paivitaTilanne(); paivitaPisteetOdottavat(); paivitaJono(); }
 setInterval(paivitaKaikki, 10000);
 // Päivitys heti kun välilehti tulee takaisin näkyviin (puhelimen näyttö päälle, selaimen välilehden vaihto)
 document.addEventListener("visibilitychange", () => { if (!document.hidden) paivitaKaikki(); });

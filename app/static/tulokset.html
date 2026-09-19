@@ -38,8 +38,9 @@
 
 <div class="container-wide">
   <div class="card" style="margin-top:24px">
-    <div class="card-title">Valitse vartio</div>
-    <div id="vartio-lista" class="vartio-selector"></div>
+    <div class="card-title">Valitse sarja</div>
+    <select id="sarja-valinta" onchange="valitseSarja(this.value)"></select>
+    <div id="vartio-lista" class="vartio-selector" style="margin-top:16px"></div>
     <div id="ei-vartioita" class="msg msg-ok" style="display:none">Ei suorituksia vielä.</div>
   </div>
 
@@ -55,6 +56,7 @@ function adminHeaders() { return { "x-admin-token": adminToken }; }
 
 let kaikkiTulokset = [];
 let valittuVartio = null;
+let valittuSarja = null;
 
 function sToAika(s) {
   if (s === null || s === undefined) return "–";
@@ -162,16 +164,50 @@ async function lataa() {
     return;
   }
   document.getElementById("ei-vartioita").style.display = "none";
-  kaikkiTulokset.forEach(v => {
+  kaikkiTulokset.forEach(v => { v.yhteensa = vartionPisteet(v); });
+
+  const sarjat = [...new Set(kaikkiTulokset.map(v => v.sarja || ""))].sort((a, b) => a.localeCompare(b, "fi"));
+  const sel = document.getElementById("sarja-valinta");
+  sel.innerHTML = "";
+  sarjat.forEach(s => {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s || "(ei sarjaa)";
+    sel.appendChild(o);
+  });
+  const edellinen = valittuSarja !== null && sarjat.includes(valittuSarja) ? valittuSarja : sarjat[0];
+  sel.value = edellinen;
+  valitseSarja(edellinen);
+}
+
+function vartionPisteet(data) {
+  let sum = 0;
+  data.rastit.forEach(r => r.tehtavat.forEach(t => {
+    if (t.osatehtavat && t.osatehtavat.length) {
+      t.osatehtavat.forEach(o => { sum += laskePisteet(o) ?? 0; });
+    } else {
+      sum += laskePisteet(t) ?? 0;
+    }
+  }));
+  return sum;
+}
+
+function valitseSarja(sarja) {
+  valittuSarja = sarja;
+  const vartioLista = document.getElementById("vartio-lista");
+  vartioLista.innerHTML = "";
+  const vartiot = kaikkiTulokset
+    .filter(v => (v.sarja || "") === sarja)
+    .sort((a, b) => b.yhteensa - a.yhteensa || a.vartio.localeCompare(b.vartio, "fi"));
+  vartiot.forEach((v, i) => {
     const btn = document.createElement("button");
     btn.className = "vartio-btn";
     btn.dataset.vartio = v.vartio;
-    btn.textContent = v.vartio;
+    btn.textContent = `${i + 1}. ${v.vartio} — ${v.yhteensa} p`;
     btn.onclick = () => naytaVartio(v.vartio);
     vartioLista.appendChild(btn);
   });
-
-  if (kaikkiTulokset.length > 0) naytaVartio(kaikkiTulokset[0].vartio);
+  if (vartiot.length) naytaVartio(vartiot[0].vartio);
 }
 
 lataa();
