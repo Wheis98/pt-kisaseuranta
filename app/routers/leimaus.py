@@ -1,9 +1,15 @@
+from datetime import datetime
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 from app import db, sessions, admin_sessions, LeimausIn, JonoIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
+
+def kirjaa_jono(numero: str, vartio: str, tapahtuma: str, aika: str, kayttaja: str):
+    # Kirjaa jonon tapahtuman (jonoon / rastille / poistettu) — jono-taulusta rivi poistuu, loki jää
+    db.execute("INSERT INTO jono_loki (numero, vartio, tapahtuma, aika, kayttaja) VALUES (?,?,?,?,?)",
+               (numero, vartio, tapahtuma, aika, kayttaja))
 
 @router.get("/leimaus.html")
 def leimaus_page():
@@ -48,14 +54,17 @@ def leimaus(l: LeimausIn):
     )
     if l.tyyppi == "sisaan":
         # Rastille otettu vartio poistuu tämän rastin jonosta
-        db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip()))
+        poistettu = db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip())).rowcount
+        if poistettu:
+            kirjaa_jono(l.rastinumero.strip(), l.vartio.strip(), "rastille", l.aika, session["nimi"])
     db.commit()
     return {"ok": True}
 
 @router.post("/api/jono")
 def lisaa_jonoon(j: JonoIn):
     # Lisää vartion rastin jonoon odottamaan rastille pääsyä
-    if not sessions.get(j.token):
+    session = sessions.get(j.token)
+    if not session:
         raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
     vartio = j.vartio.strip()
     numero = j.rastinumero.strip()
@@ -71,6 +80,7 @@ def lisaa_jonoon(j: JonoIn):
     if db.execute("SELECT id FROM jono WHERE numero=? AND vartio=?", (numero, vartio)).fetchone():
         raise HTTPException(status_code=409, detail=f"{vartio} on jo jonossa")
     db.execute("INSERT INTO jono (numero, vartio, aika) VALUES (?,?,?)", (numero, vartio, j.aika))
+    kirjaa_jono(numero, vartio, "jonoon", j.aika, session["nimi"])
     db.commit()
     return {"ok": True}
 
@@ -80,10 +90,14 @@ def hae_jono(numero: str):
     return [dict(r) for r in rows]
 
 @router.delete("/api/jono/{jono_id}")
-def poista_jonosta(jono_id: int, token: str):
-    if not sessions.get(token):
+def poista_jonosta(jono_id: int, token: str, aika: str = ""):
+    session = sessions.get(token)
+    if not session:
         raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
-    db.execute("DELETE FROM jono WHERE id=?", (jono_id,))
+    rivi = db.execute("SELECT numero, vartio FROM jono WHERE id=?", (jono_id,)).fetchone()
+    if rivi:
+        db.execute("DELETE FROM jono WHERE id=?", (jono_id,))
+        kirjaa_jono(rivi["numero"], rivi["vartio"], "poistettu", aika or datetime.now().strftime("%d.%m.%Y klo %H.%M.%S"), session["nimi"])
     db.commit()
     return {"ok": True}
 

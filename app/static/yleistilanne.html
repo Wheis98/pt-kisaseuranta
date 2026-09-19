@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Yleistilanne</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .rasti-kortti { margin-bottom:16px; }
+    .rasti-otsikko { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .rasti-nimi { font-weight:700; font-size:1.05rem; }
+    .muutos { font-size:.8rem; color:var(--muted); }
+    .ryhma-otsikko { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
+    .rivi { display:flex; justify-content:space-between; gap:8px; padding:7px 10px; border:1.5px solid var(--border); border-radius:8px; margin-bottom:5px; font-size:.9rem; }
+    .rivi .aika { color:var(--muted); font-size:.8rem; white-space:nowrap; }
+    .vali { display:flex; flex-direction:column; align-items:center; margin:-4px 0 16px; padding:10px 12px; border:1.5px dashed var(--border); border-radius:10px; background:#fafbff; font-size:.85rem; }
+    .vali-otsikko { font-weight:700; color:var(--muted); margin-bottom:4px; }
+    .vali .rivi { width:100%; background:white; }
+    .tyhja { font-size:.85rem; color:var(--muted); padding:2px 0; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left"><span class="header-title">Yleistilanne</span></div>
+  <div class="header-right"><a href="admin.html" class="btn btn-white btn-sm">← Admin</a></div>
+</div>
+<div class="container-wide">
+  <div id="lista" style="margin-top:24px"></div>
+  <div id="paivitys" style="text-align:center;font-size:.78rem;color:var(--muted);margin:12px 0"></div>
+</div>
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+
+function rivit(lista, tyhjaTeksti) {
+  if (!lista.length) return `<div class="tyhja">${tyhjaTeksti}</div>`;
+  return lista.map((v, i) => `<div class="rivi"><span></span><span class="aika">${v.aika}</span></div>`).join("");
+}
+
+async function lataa() {
+  const res = await fetch("/api/yleistilanne", { headers: { "x-admin-token": adminToken } });
+  if (res.status === 403) { localStorage.removeItem("admin_token"); location.href = "/admin.html"; return; }
+  if (!res.ok) return;
+  const rastit = await res.json();
+  const lista = document.getElementById("lista");
+  lista.innerHTML = "";
+  rastit.forEach((r, idx) => {
+    const kortti = document.createElement("div");
+    kortti.className = "card rasti-kortti";
+    kortti.innerHTML = `
+      <div class="rasti-otsikko">
+        <span class="rasti-nimi"></span>
+        <span class="muutos">Viimeisin muutos: ${r.viimeisin_muutos || "–"}</span>
+      </div>
+      <div class="ryhma-otsikko">Rastilla (${r.rastilla.length})</div>
+      <div class="rastilla">${rivit(r.rastilla, "Ei vartioita rastilla")}</div>
+      <div class="ryhma-otsikko">Jonossa (${r.jonossa.length})</div>
+      <div class="jonossa">${rivit(r.jonossa, "Ei jonoa")}</div>
+      <div class="ryhma-otsikko">Jonon viimeisimmät tapahtumat</div>
+      <div class="loki">${rivit(r.jono_loki, "Ei tapahtumia")}</div>`;
+    kortti.querySelector(".rasti-nimi").textContent = "Rasti " + r.numero;
+    // Vartioiden nimet asetetaan textContentilla
+    kortti.querySelectorAll(".rastilla .rivi").forEach((el, i) => el.firstElementChild.textContent = r.rastilla[i].vartio);
+    kortti.querySelectorAll(".jonossa .rivi").forEach((el, i) => el.firstElementChild.textContent = (i + 1) + ". " + r.jonossa[i].vartio);
+    const TAPAHTUMA = { jonoon: "jonoon", rastille: "jonosta rastille", poistettu: "poistettu jonosta" };
+    kortti.querySelectorAll(".loki .rivi").forEach((el, i) => {
+      const x = r.jono_loki[i];
+      el.firstElementChild.textContent = `${x.vartio} — ${TAPAHTUMA[x.tapahtuma] || x.tapahtuma}${x.kayttaja ? " (" + x.kayttaja + ")" : ""}`;
+    });
+    lista.appendChild(kortti);
+
+    // Rastien väliin: vartiot jotka ovat lähteneet tältä rastilta ja ovat matkalla seuraavalle
+    if (r.matkalla.length) {
+      const seuraava = rastit[idx + 1];
+      const vali = document.createElement("div");
+      vali.className = "vali";
+      vali.innerHTML = `<div class="vali-otsikko"></div>${rivit(r.matkalla, "")}`;
+      vali.querySelector(".vali-otsikko").textContent = seuraava
+        ? `↓ Matkalla: rasti ${r.numero} → rasti ${seuraava.numero} (${r.matkalla.length})`
+        : `↓ Lähtenyt rastilta ${r.numero}, ei seuraavaa rastia (${r.matkalla.length})`;
+      vali.querySelectorAll(".rivi").forEach((el, i) => el.firstElementChild.textContent = r.matkalla[i].vartio + " — lähti " + r.matkalla[i].aika);
+      lista.appendChild(vali);
+    }
+  });
+  if (!rastit.length) lista.innerHTML = '<div class="msg msg-ok">Ei rasteja.</div>';
+  document.getElementById("paivitys").textContent = "Päivitetty " + new Date().toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+lataa();
+setInterval(lataa, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) lataa(); });
+</script>
+</body>
+</html>

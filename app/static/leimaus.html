@@ -535,7 +535,7 @@ async function otaJonosta(vartio, btn, uudelleen=false) {
 
 async function poistaJonosta(id, btn) {
   btn.disabled=true;
-  await fetch(`/api/jono/${id}?token=${encodeURIComponent(token)}`,{method:"DELETE"});
+  await fetch(`/api/jono/${id}?token=${encodeURIComponent(token)}&aika=${encodeURIComponent(aikaleima())}`,{method:"DELETE"});
   await paivitaJono();
 }
 

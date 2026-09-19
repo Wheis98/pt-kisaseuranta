@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS jono (
   aika TEXT NOT NULL,
   UNIQUE(numero, vartio)
 );
+CREATE TABLE IF NOT EXISTS jono_loki (
+  id INTEGER PRIMARY KEY,
+  numero TEXT NOT NULL,
+  vartio TEXT NOT NULL,
+  tapahtuma TEXT NOT NULL,  -- jonoon | rastille | poistettu
+  aika TEXT NOT NULL,
+  kayttaja TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS kayttaja_pyynnot (
   id INTEGER PRIMARY KEY,
   etunimi TEXT NOT NULL,
