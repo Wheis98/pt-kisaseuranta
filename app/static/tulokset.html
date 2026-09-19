@@ -134,7 +134,7 @@ function naytaVartio(vartio) {
 
     const rastiTotalStr = rastiHasAny ? `${rastiTotal} p${rastiMax>0?' / '+rastiMax+' p':''}` : '–';
     block.innerHTML = `
-      <div class="rasti-block-title"><span>Rasti ${r.rasti_numero}</span><span>${rastiTotalStr}</span></div>
+      <div class="rasti-block-title"><span>Rasti ${r.rasti_numero}</span><span>${rastiTotalStr} · <a href="pisteet.html?admin=1&rasti_id=${r.rasti_id}&vartio=${encodeURIComponent(vartio)}" style="color:inherit;text-decoration:underline">Muokkaa</a></span></div>
       ${rowsHTML}
       ${r.kommentti ? `<div class="kommentti-row">💬 ${r.kommentti}</div>` : ''}
     `;

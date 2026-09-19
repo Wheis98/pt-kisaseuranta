@@ -96,6 +96,12 @@ CREATE TABLE IF NOT EXISTS osatehtava_tulokset (
   paivitetty TEXT NOT NULL,
   UNIQUE(suoritus_id, osatehtava_id)
 );
+CREATE TABLE IF NOT EXISTS pisteytetyt_kaynnit (
+  vartio TEXT NOT NULL,
+  rasti_id INTEGER NOT NULL,
+  leimaus_id INTEGER NOT NULL,
+  PRIMARY KEY (vartio, rasti_id)
+);
 CREATE TABLE IF NOT EXISTS kayttaja_pyynnot (
   id INTEGER PRIMARY KEY,
   etunimi TEXT NOT NULL,

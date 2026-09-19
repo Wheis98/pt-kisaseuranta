@@ -64,6 +64,47 @@ def aktiiviset(numero: str):
     """, (numero,)).fetchall()
     return [dict(r) for r in rows]
 
+@router.get("/api/pisteita-odottavat")
+def pisteita_odottavat(numero: str):
+    # Palauttaa vartiot jotka on leimattu ulos tältä rastilta mutta joiden kaikkia tehtäviä ei ole vielä pisteytetty.
+    # Tehtävä on pisteytetty kun sillä on tulos, tai osatehtävällisellä tehtävällä kun jokaisella osatehtävällä on tulos.
+    # Vain viimeisin leimaus per vartio ratkaisee (uudelleen sisään leimattu vartio ei ole vielä valmis).
+    # Kun vartio tuodaan rastille uudelleen ja leimataan taas ulos, se nousee listalle vaikka kaikki tehtävät
+    # olisi pisteytetty ensimmäisellä käynnillä, kunnes pisteet on tallennettu uudestaan.
+    rows = db.execute("""
+        SELECT l.vartio, l.aika FROM leimaukset l
+        JOIN rastit r ON r.numero = l.numero
+        WHERE l.numero = ? AND l.tyyppi = 'ulos'
+        AND l.id = (SELECT MAX(id) FROM leimaukset l2 WHERE l2.vartio = l.vartio AND l2.numero = l.numero)
+        AND (
+            -- vartio on käynyt rastilla uudelleen sen jälkeen kun pisteet tallennettiin viimeksi.
+            -- Vanhalla datalla (ei tallennettua käyntiä) oletetaan pisteet annetuksi ensimmäisellä käynnillä.
+            COALESCE((SELECT p.leimaus_id FROM pisteytetyt_kaynnit p
+                      WHERE p.vartio = l.vartio AND p.rasti_id = r.id),
+                     (SELECT MIN(l4.id) FROM leimaukset l4
+                      WHERE l4.vartio = l.vartio AND l4.numero = l.numero AND l4.tyyppi = 'ulos')) < l.id
+            -- tehtävä ilman osatehtäviä, jolle ei ole tulosta
+            OR EXISTS (
+                SELECT 1 FROM tehtavat t
+                WHERE t.rasti_id = r.id
+                AND NOT EXISTS (SELECT 1 FROM osatehtavat o WHERE o.tehtava_id = t.id)
+                AND NOT EXISTS (
+                    SELECT 1 FROM tehtava_tulokset tt JOIN suoritukset s ON s.id = tt.suoritus_id
+                    WHERE s.vartio = l.vartio AND s.rasti_id = r.id AND tt.tehtava_id = t.id)
+            )
+            -- osatehtävä, jolle ei ole tulosta
+            OR EXISTS (
+                SELECT 1 FROM osatehtavat o JOIN tehtavat t ON t.id = o.tehtava_id
+                WHERE t.rasti_id = r.id
+                AND NOT EXISTS (
+                    SELECT 1 FROM osatehtava_tulokset ot JOIN suoritukset s ON s.id = ot.suoritus_id
+                    WHERE s.vartio = l.vartio AND s.rasti_id = r.id AND ot.osatehtava_id = o.id)
+            )
+        )
+        ORDER BY l.id
+    """, (numero,)).fetchall()
+    return [{"vartio": r["vartio"], "aika": r["aika"]} for r in rows]
+
 @router.get("/api/data")
 def get_data(token: str = "", numero: str = "", vartio: str = "", x_admin_token: str = Header(None)):
     if x_admin_token and x_admin_token in admin_sessions:

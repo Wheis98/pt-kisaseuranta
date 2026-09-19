@@ -20,7 +20,7 @@
     .score-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .score-row input { padding:8px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:.95rem; }
     .score-row .score-input { width:90px; }
-    .score-row .aika-input { width:80px; }
+    .score-row .aika-input { width:64px; }
     .max-hint { font-size:.8rem; color:var(--muted); }
     .osatehtava-block { border-left:3px solid var(--border); padding:8px 0 6px 14px; margin:8px 0 4px; }
     .osa-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:.9rem; }
@@ -56,30 +56,37 @@
 </div>
 
 <script>
-const token = localStorage.getItem("token");
-const rastinumero = localStorage.getItem("rastinumero");
 const params = new URLSearchParams(location.search);
+// Admin-tila (?admin=1): tulosten muokkaus tulokset-sivulta admin-tokenilla, ei rastihenkilön kirjautumista
+const adminMode = params.get("admin") === "1";
+const adminToken = localStorage.getItem("admin_token");
+const token = adminMode ? "" : localStorage.getItem("token");
+const rastinumero = localStorage.getItem("rastinumero");
 const rastiId = parseInt(params.get("rasti_id"));
 const vartio = params.get("vartio") || "";
-if (!token || !rastiId || !vartio) { window.location.href = "/leimaus.html"; }
+if (adminMode ? !adminToken : !token) { window.location.href = adminMode ? "/admin.html" : "/leimaus.html"; }
+else if (!rastiId || !vartio) { window.location.href = adminMode ? "/tulokset.html" : "/leimaus.html"; }
+const adminOtsikot = adminMode ? { "x-admin-token": adminToken } : {};
 
-document.getElementById("vartio-info").textContent = vartio;
+document.getElementById("vartio-info").textContent = vartio + (adminMode ? " · admin" : "");
 
 let suoritusId = null;
 let tehtavat = [];
 
-function takaisin() { window.location.href = "leimaus.html"; }
+function takaisin() { window.location.href = adminMode ? "tulokset.html" : "leimaus.html"; }
 
-function sToAika(s) {
-  if (s === null || s === undefined || s === "") return "";
-  const min = Math.floor(s / 60), sek = Math.round(s % 60);
-  return `${String(min).padStart(2,'0')}:${String(sek).padStart(2,'0')}`;
+// Aika syötetään kahteen kenttään: minuutit (<id>-m) ja sekunnit (<id>-s). Tyhjä kenttä = 0, molemmat tyhjiä = ei aikaa.
+function aikaKentista(idPohja) {
+  const m = document.getElementById(idPohja + "-m")?.value.trim() ?? "";
+  const s = document.getElementById(idPohja + "-s")?.value.trim() ?? "";
+  if (m === "" && s === "") return null;
+  const mm = m === "" ? 0 : parseInt(m), ss = s === "" ? 0 : parseInt(s);
+  return isNaN(mm) || isNaN(ss) ? null : mm * 60 + ss;
 }
-function aikaToS(str) {
-  if (!str || !str.trim()) return null;
-  const p = str.trim().split(":");
-  if (p.length === 2) { const m=parseInt(p[0]),s=parseInt(p[1]); return isNaN(m)||isNaN(s)?null:m*60+s; }
-  const v = parseFloat(str); return isNaN(v) ? null : v;
+function aikaMinSek(sekunnit) {
+  if (sekunnit === null || sekunnit === undefined || sekunnit === "") return { m: "", s: "" };
+  const kok = Math.round(sekunnit);
+  return { m: Math.floor(kok / 60), s: kok % 60 };
 }
 
 function tyyppiClass(t) { return 'tyyppi-badge tyyppi-'+t; }
@@ -133,7 +140,7 @@ function getTehtavaScore(t) {
     const oikein=o?.classList.contains('sel-ok')?1:v?.classList.contains('sel-no')?0:null;
     return { pisteet: oikein!==null?(oikein?(t.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
   } else {
-    const aika=aikaToS(document.getElementById(`t-aika-${t.id}`)?.value);
+    const aika=aikaKentista(`t-aika-${t.id}`);
     const pv=parseFloat(document.getElementById(`t-p-${t.id}`)?.value);
     return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
   }
@@ -147,7 +154,7 @@ function getOsaScore(o) {
     const oikein=ob?.classList.contains('sel-ok')?1:vb?.classList.contains('sel-no')?0:null;
     return { pisteet: oikein!==null?(oikein?(o.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
   } else {
-    const aika=aikaToS(document.getElementById(`o-aika-${o.id}`)?.value);
+    const aika=aikaKentista(`o-aika-${o.id}`);
     const pv=parseFloat(document.getElementById(`o-p-${o.id}`)?.value);
     return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
   }
@@ -157,20 +164,23 @@ function renderScore(tyyppi, id, prefix, existing, max, timerSek) {
   if (tyyppi === 'pisteet') {
     const val = existing?.pisteet ?? "";
     return `<div class="score-row">
-      <input type="number" class="score-input" id="${prefix}-${id}" value="${val}" placeholder="0" step="0.5" min="0" ${max!==null?`max="${max}"`:''}
+      <input type="number" class="score-input" id="${prefix}-${id}" value="${val}" placeholder="p" step="0.5" min="0" ${max!==null?`max="${max}"`:''}
         oninput="updateParentTotal(${id},'${prefix}')">
       ${max!==null?`<span class="max-hint">/ ${max} p</span>`:'<span class="max-hint">pisteitä</span>'}
     </div>`;
   } else if (tyyppi === 'oikein_vaarin') {
     return oikeinBtn(id, prefix, existing?.oikein ?? null);
   } else {
-    const aikaVal = existing?.aika_sekuntia != null ? sToAika(existing.aika_sekuntia) : (timerSek ? sToAika(timerSek) : "");
+    const aikaVal = aikaMinSek(existing?.aika_sekuntia != null ? existing.aika_sekuntia : (timerSek || null));
     const pVal = existing?.pisteet ?? "";
     return `<div class="score-row">
-      <input type="text" class="aika-input" id="${prefix}-aika-${id}" value="${aikaVal}" placeholder="MM:SS"
+      <input type="number" class="aika-input" id="${prefix}-aika-${id}-m" value="${aikaVal.m}" placeholder="min" min="0" step="1"
         oninput="updateParentTotal(${id},'${prefix}')">
-      <span class="max-hint">aika</span>
-      <input type="number" class="score-input" id="${prefix}-p-${id}" value="${pVal}" placeholder="0" step="0.5" min="0"
+      <span class="max-hint">min</span>
+      <input type="number" class="aika-input" id="${prefix}-aika-${id}-s" value="${aikaVal.s}" placeholder="sek" min="0" max="59" step="1"
+        oninput="updateParentTotal(${id},'${prefix}')">
+      <span class="max-hint">sek</span>
+      <input type="number" class="score-input" id="${prefix}-p-${id}" value="${pVal}" placeholder="p" step="0.5" min="0"
         style="width:70px" oninput="updateParentTotal(${id},'${prefix}')">
       <span class="max-hint">${max!==null?'/ '+max+' p':'p'}</span>
     </div>`;
@@ -224,11 +234,67 @@ function renderTehtavat(tehtavat, suoritus) {
   tehtavat.forEach(t => { if(t.osatehtavat?.length) recomputeParentTotal(t); });
 }
 
+// Tarkistaa ettei mikään pistekenttä ylitä tehtävän maksimia eikä ole negatiivinen.
+// Merkitsee virheelliset kentät punaisella ja palauttaa virheiden tekstit.
+function tarkistaRajat() {
+  const virheet = [];
+  let ensimmainen = null;
+  const tarkista = (inputId, nimi, max) => {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.style.borderColor = "";
+    const v = parseFloat(el.value);
+    if (isNaN(v)) return;
+    if (v < 0 || (max !== null && max !== undefined && v > max)) {
+      el.style.borderColor = "var(--danger, #dc2626)";
+      virheet.push(v < 0 ? `${nimi}: pisteet eivät voi olla negatiivisia` : `${nimi}: ${v} ylittää maksimin ${max} p`);
+      if (!ensimmainen) ensimmainen = el;
+    }
+  };
+  const tarkistaAika = (idPohja, nimi) => {
+    const m = document.getElementById(idPohja + "-m"), s = document.getElementById(idPohja + "-s");
+    if (!m || !s) return;
+    m.style.borderColor = s.style.borderColor = "";
+    const mv = parseInt(m.value), sv = parseInt(s.value);
+    const vaara = (m.value.trim() !== "" && (isNaN(mv) || mv < 0)) || (s.value.trim() !== "" && (isNaN(sv) || sv < 0 || sv > 59));
+    if (vaara) {
+      const el = (s.value.trim() !== "" && (isNaN(sv) || sv < 0 || sv > 59)) ? s : m;
+      el.style.borderColor = "var(--danger, #dc2626)";
+      virheet.push(`${nimi}: aika virheellinen (sekunnit 0–59)`);
+      if (!ensimmainen) ensimmainen = el;
+    }
+  };
+  for (const t of tehtavat) {
+    if (t.osatehtavat && t.osatehtavat.length > 0) {
+      for (const o of t.osatehtavat) {
+        if (o.tyyppi === 'ajanotto') tarkistaAika(`o-aika-${o.id}`, `${t.nimi} / ${o.nimi}`);
+        if (o.tyyppi === 'pisteet') tarkista(`o-${o.id}`, `${t.nimi} / ${o.nimi}`, o.max_pisteet);
+        else if (o.tyyppi === 'ajanotto') tarkista(`o-p-${o.id}`, `${t.nimi} / ${o.nimi}`, o.max_pisteet);
+      }
+    } else if (t.tyyppi === 'pisteet') tarkista(`t-${t.id}`, t.nimi, t.max_pisteet);
+    else if (t.tyyppi === 'ajanotto') { tarkistaAika(`t-aika-${t.id}`, t.nimi); tarkista(`t-p-${t.id}`, t.nimi, t.max_pisteet); }
+  }
+  if (ensimmainen) ensimmainen.focus();
+  return virheet;
+}
+
 async function tallenna() {
+  const virheet = tarkistaRajat();
+  if (virheet.length) {
+    const el = document.getElementById("virhe");
+    el.textContent = "Tarkista pisteet ja täytä uudelleen: " + virheet.join("; ");
+    el.style.display = "flex";
+    return;
+  }
   const btn = document.getElementById("tallenna-btn");
   btn.disabled = true; btn.textContent = "Tallennetaan...";
   document.getElementById("virhe").style.display = "none";
   const nyt = new Date().toLocaleString("fi-FI");
+
+  const tallennaTulos = async (data) => {
+    const res = await fetch("/api/tulos", { method:"POST", headers:{"Content-Type":"application/json", ...adminOtsikot}, body: JSON.stringify(data) });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.status); }
+  };
 
   try {
     for (const t of tehtavat) {
@@ -236,22 +302,21 @@ async function tallenna() {
         for (const o of t.osatehtavat) {
           const s = getOsaScore(o);
           if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
-            await fetch("/api/tulos", { method:"POST", headers:{"Content-Type":"application/json"},
-              body: JSON.stringify({suoritus_id:suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt}) });
+            await tallennaTulos({suoritus_id:suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt});
           }
         }
       } else {
         const s = getTehtavaScore(t);
         if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
-          await fetch("/api/tulos", { method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({suoritus_id:suoritusId, tehtava_id:t.id, ...s, token, aika:nyt}) });
+          await tallennaTulos({suoritus_id:suoritusId, tehtava_id:t.id, ...s, token, aika:nyt});
         }
       }
     }
 
     const kommentti = document.getElementById("kommentti").value.trim() || null;
-    await fetch(`/api/suoritus/${suoritusId}`, { method:"PUT", headers:{"Content-Type":"application/json"},
+    const kRes = await fetch(`/api/suoritus/${suoritusId}`, { method:"PUT", headers:{"Content-Type":"application/json", ...adminOtsikot},
       body: JSON.stringify({kommentti, token}) });
+    if (!kRes.ok) { const e = await kRes.json().catch(() => ({})); throw new Error(e.detail || kRes.status); }
 
     // Clear timer
     localStorage.removeItem(`kipa_timer_${rastinumero}_${vartio}`);
@@ -272,11 +337,15 @@ async function init() {
   try {
     const [rastiRes, suoritusRes, tehtavatRes] = await Promise.all([
       fetch("/api/rastit"),
-      fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${rastiId}&token=${encodeURIComponent(token)}`),
+      fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${rastiId}&token=${encodeURIComponent(token)}`, { headers: adminOtsikot }),
       fetch(`/api/tehtavat?rasti_id=${rastiId}`)
     ]);
 
-    if (suoritusRes.status === 401) { localStorage.clear(); window.location.href="/"; return; }
+    if (suoritusRes.status === 401) {
+      if (adminMode) { localStorage.removeItem("admin_token"); window.location.href = "/admin.html"; }
+      else { localStorage.clear(); window.location.href = "/"; }
+      return;
+    }
     if (!suoritusRes.ok) throw new Error("Virhe suorituksen latauksessa");
 
     const rastit = await rastiRes.json();

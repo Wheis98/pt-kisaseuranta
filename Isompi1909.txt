@@ -1,0 +1,23 @@
+Rastihenkilön näkymä (leimaus.html, leimaus.py):
+
+"Merkitse pisteet" -kortti listaa kaikki ulos leimatut vartiot, joilla ei ole kaikkia tehtäviä pisteytetty.
+Uudelleen tuotu vartio nousee listalle jokaisen uuden ulosleimauksen jälkeen (uusi taulu pisteytetyt_kaynnit).
+Toistuva tuonti ei lukitse pisteitä, ja pisteitä voi tallentaa useasti.
+Automaattinen päivitys: 10 sekunnin välein, välilehden vaihdossa ja kun sivu tulee takaisin näkyviin.
+Rastin tunnus haetaan palvelimelta.
+Ulosleimauksen jälkeen kortin päivitys ei enää riipu muista päivityksistä, ja sivu vierittyy kortille.
+Pisteet-sivu (pisteet.html, tulos.py):
+
+Tehtävän maksimin ylitys ja negatiiviset pisteet estetään sekä sivulla (kentät värjätään punaisiksi) että palvelimella. Sivu ilmoittaa nyt myös tallennusvirheet.
+Ajanotto: aika syötetään kahteen kenttään (minuutit ja sekunnit). Sekunnit ovat 0–59, ja aika tallennetaan sekunteina.
+Pistekenttien vihjeteksti on p eikä 0. Nolla pitää kirjoittaa itse.
+Admin voi muokata tuloksia: Tulokset-sivun rastilohkoissa on Muokkaa-linkki, joka avaa pisteet-sivun admin-tilassa.
+Peruttu
+Toisen käynnin pisteiden lukitus tehtiin ja poistettiin kokonaan sinun pyynnöstäsi.
+
+Avoimet asiat
+Ajanoton pisteiden interpolointi: ei tehty. Tarvitsen jokaiselle aikatehtävälle nopean ja hitaan ajan rajat, ja niiden tallennukselle tarvitaan uudet kentät.
+Oikean sovelluksen palvelin (portti 8000) ei ole nyt käynnissä. kipa.db ei ole muuttunut. Palvelimen käynnistys tuo siihen tokenin lukitustriggerin ja uuden taulun pisteytetyt_kaynnit. Ne ovat skeemalisäyksiä, ei datan muutoksia. Kerro, jos et halua niitä.
+Pisteytys on oikeassa kannassa pois päältä ("Kaikki pois"). Admin-sivun Pisteytys-kortista sen saa päälle, mutta muutos vaatii sinulta luvan.
+Kesken jääneet syötteet: kirjoitettuja mutta tallentamattomia pisteitä ei muisteta sivun päivityksen yli. Kerro, jos haluat sen.
+Testaus: kokeilin muutokset testikannan kopioilla, ja selaintestit ajoin Edgellä (Playwright, jonka asensin koneelle). kipa.db pysyi koko ajan muuttumattomana.

@@ -1,0 +1,8 @@
+Oikeinväärin tehtävässä ei anneta maksimi pisteitä vaan maksimi pisteet
+muodostuvat osatehtävistä
+
+Vartio haetaan manuaalisesti vartion numerolla
+
+Tulokset printataan sarjoittain
+
+Poista käyttäjältä vartion manuaalinen luominen

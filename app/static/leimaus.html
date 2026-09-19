@@ -91,6 +91,12 @@
   <!-- Leimaus-paneeli -->
   <div id="panel-leimaus" class="tab-panel active">
 
+    <!-- Odottaa pisteitä -->
+    <div class="card" id="pisteet-odottavat" style="display:none">
+      <div class="card-title">Merkitse pisteet</div>
+      <div id="pisteet-odottavat-lista"></div>
+    </div>
+
     <!-- Rastilla nyt -->
     <div class="card">
       <div class="card-title">Rastilla nyt</div>
@@ -145,7 +151,7 @@
 const token = localStorage.getItem("token");
 const nimi = localStorage.getItem("nimi");
 const rastinumero = localStorage.getItem("rastinumero");
-const rastiId = parseInt(localStorage.getItem("rasti_id") || "0");
+let rastiId = parseInt(localStorage.getItem("rasti_id") || "0"); // tarkennetaan init():ssä palvelimen tiedolla
 if (!token) window.location.href = "/";
 if (!rastinumero) window.location.href = "/rasti.html";
 
@@ -170,6 +176,7 @@ function vaihdaTab(nimi) {
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-"+nimi).classList.add("active");
   if (nimi==="tilanne") paivitaTilanne();
+  else { paivitaAktiiviset(); paivitaPisteetOdottavat(); }
 }
 
 // ── Viesti ──
@@ -331,22 +338,36 @@ async function leimaaUlos(vartio, btn) {
     const res = await fetch("/api/leimaus", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"ulos"}) });
     if (!res.ok) { const e=await res.json(); if(res.status===401){localStorage.clear();window.location.href="/";return;} throw new Error(e.detail); }
     pysaytaAjastin(vartio);
-    if (pisteytysAktiivinen && rastiId) naytaPisteytysPrompt(vartio);
-    await paivitaAktiiviset(); await paivitaTilanne();
+    // Kaikki päivitetään erikseen, jotta yhden epäonnistuminen ei estä "Merkitse pisteet" -kortin näkymistä
+    await Promise.allSettled([paivitaAktiiviset(), paivitaTilanne(), paivitaPisteetOdottavat()]);
+    const pisteKortti = document.getElementById("pisteet-odottavat");
+    if (pisteKortti.style.display !== "none") pisteKortti.scrollIntoView({behavior:"smooth", block:"start"});
   } catch(e) { setViesti("Virhe: "+e.message,"error"); btn.disabled=false; btn.textContent="Ulos"; }
 }
 
-function naytaPisteytysPrompt(vartio) {
-  const existing = document.getElementById("pisteet-prompt");
-  if (existing) existing.remove();
-  const banner = document.createElement("div");
-  banner.id = "pisteet-prompt";
-  banner.className = "msg msg-ok";
-  banner.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px";
-  banner.innerHTML = `<span>Merkitse pisteet: <strong>${vartio}</strong></span><a href="pisteet.html?rasti_id=${rastiId}&vartio=${encodeURIComponent(vartio)}" class="btn btn-success btn-sm">Merkitse →</a>`;
-  const card = document.querySelector(".card");
-  if (card) card.parentNode.insertBefore(banner, card);
-  setTimeout(() => banner.remove(), 60000);
+// Kaikki ulos leimatut vartiot joille ei ole vielä merkitty pisteitä (pysyy näkyvissä kunnes pisteet on tallennettu)
+async function paivitaPisteetOdottavat() {
+  const card = document.getElementById("pisteet-odottavat");
+  if (!pisteytysAktiivinen || !rastiId) { card.style.display="none"; return; }
+  const res = await fetch("/api/pisteita-odottavat?numero="+encodeURIComponent(rastinumero));
+  if (!res.ok) return;
+  const lista = await res.json();
+  const div = document.getElementById("pisteet-odottavat-lista");
+  div.innerHTML = "";
+  card.style.display = lista.length ? "" : "none";
+  lista.forEach(v => {
+    const item = document.createElement("div");
+    item.className = "active-item";
+    item.innerHTML = `
+      <div class="active-item-info">
+        <div class="active-item-name"></div>
+        <div class="active-item-meta">ulos ${v.aika}</div>
+      </div>
+      <a class="btn btn-success btn-sm">Merkitse →</a>`;
+    item.querySelector(".active-item-name").textContent = v.vartio;
+    item.querySelector("a").href = `pisteet.html?rasti_id=${rastiId}&vartio=${encodeURIComponent(v.vartio)}`;
+    div.appendChild(item);
+  });
 }
 
 function hyvaksyUudelleen() {
@@ -534,11 +555,20 @@ async function paivitaTilanne() {
 async function init() {
   const rastit = await fetch("/api/rastit").then(r=>r.json()).catch(()=>[]);
   const rasti = rastit.find(r=>r.numero===rastinumero);
-  if (rasti) pisteytysAktiivinen = rasti.pisteytys_aktiivinen || false;
-  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), lataaVartiot()]);
+  if (rasti) {
+    pisteytysAktiivinen = rasti.pisteytys_aktiivinen || false;
+    rastiId = rasti.id; // luotettavampi kuin selaimen muistiin tallennettu arvo
+    localStorage.setItem("rasti_id", rasti.id);
+  }
+  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), lataaVartiot(), paivitaPisteetOdottavat()]);
 }
 init();
-setInterval(()=>{paivitaAktiiviset();paivitaTilanne();},30000);
+function paivitaKaikki() { paivitaAktiiviset(); paivitaTilanne(); paivitaPisteetOdottavat(); }
+setInterval(paivitaKaikki, 10000);
+// Päivitys heti kun välilehti tulee takaisin näkyviin (puhelimen näyttö päälle, selaimen välilehden vaihto)
+document.addEventListener("visibilitychange", () => { if (!document.hidden) paivitaKaikki(); });
+// Palattaessa pisteet-sivulta (back/bfcache) kaikki päivittyy heti
+window.addEventListener("pageshow", e => { if (e.persisted) paivitaKaikki(); });
 </script>
 </body>
 </html>

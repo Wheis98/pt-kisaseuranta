@@ -13,6 +13,16 @@ def pisteet_page():
 def tulokset_page():
     return FileResponse(STATIC_DIR / "tulokset.html")
 
+def merkitse_pisteytetyksi(vartio: str, rasti_id: int):
+    # Tallentaa mihin käyntiin (viimeisin leimaus rastilla) pisteet kuuluvat, jotta uudelleen tuotu vartio
+    # nousee taas "Merkitse pisteet" -listalle seuraavan ulosleimauksen jälkeen.
+    db.execute("""
+        INSERT INTO pisteytetyt_kaynnit (vartio, rasti_id, leimaus_id)
+        VALUES (?, ?, COALESCE((SELECT MAX(l.id) FROM leimaukset l JOIN rastit r ON r.numero = l.numero
+                                WHERE r.id = ? AND l.vartio = ?), 0))
+        ON CONFLICT(vartio, rasti_id) DO UPDATE SET leimaus_id = excluded.leimaus_id
+    """, (vartio, rasti_id, rasti_id, vartio))
+
 @router.get("/api/suoritus")
 def get_or_create_suoritus(vartio: str, rasti_id: int, token: str = "", x_admin_token: str = Header(None)):
     # Hakee tai luo suorituksen vartio+rasti-parille, palauttaa myös tallennetut tulokset
@@ -55,6 +65,9 @@ def update_suoritus(suoritus_id: int, s: SuoritusKommenttiIn, x_admin_token: str
     else:
         raise HTTPException(status_code=401, detail="Kirjaudu uudelleen")
     db.execute("UPDATE suoritukset SET kommentti=? WHERE id=?", (s.kommentti, suoritus_id))
+    rivi = db.execute("SELECT vartio, rasti_id FROM suoritukset WHERE id=?", (suoritus_id,)).fetchone()
+    if rivi:
+        merkitse_pisteytetyksi(rivi["vartio"], rivi["rasti_id"])
     db.commit()
     return {"ok": True}
 
@@ -69,9 +82,20 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
         pass
     else:
         raise HTTPException(status_code=401, detail="Kirjaudu uudelleen")
-    suoritus = db.execute("SELECT id FROM suoritukset WHERE id=?", (t.suoritus_id,)).fetchone()
+    suoritus = db.execute("SELECT id, vartio, rasti_id FROM suoritukset WHERE id=?", (t.suoritus_id,)).fetchone()
     if not suoritus:
         raise HTTPException(status_code=404, detail="Suoritusta ei löydy")
+    # Pisteet eivät saa olla negatiivisia eikä ylittää tehtävän maksimia
+    if t.pisteet is not None:
+        if t.tehtava_id is not None:
+            rivi = db.execute("SELECT max_pisteet FROM tehtavat WHERE id=?", (t.tehtava_id,)).fetchone()
+        else:
+            rivi = db.execute("SELECT max_pisteet FROM osatehtavat WHERE id=?", (t.osatehtava_id,)).fetchone()
+        max_p = rivi["max_pisteet"] if rivi else None
+        if t.pisteet < 0:
+            raise HTTPException(status_code=400, detail="Pisteet eivät voi olla negatiivisia")
+        if max_p is not None and t.pisteet > max_p:
+            raise HTTPException(status_code=400, detail=f"Pisteet {t.pisteet:g} ylittävät maksimin {max_p:g}")
     if t.tehtava_id is not None:
         db.execute("""
             INSERT INTO tehtava_tulokset (suoritus_id, tehtava_id, pisteet, oikein, aika_sekuntia, paivitetty)
@@ -90,6 +114,7 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
         """, (t.suoritus_id, t.osatehtava_id, t.pisteet, t.oikein, t.aika_sekuntia, t.aika))
     else:
         raise HTTPException(status_code=400, detail="tehtava_id tai osatehtava_id vaaditaan")
+    merkitse_pisteytetyksi(suoritus["vartio"], suoritus["rasti_id"])
     db.commit()
     return {"ok": True}
 
