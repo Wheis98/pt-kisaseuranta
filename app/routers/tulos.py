@@ -123,15 +123,46 @@ def get_tulokset(x_admin_token: str = Header(None)):
     # Palauttaa kaikkien vartioiden tulokset — käytetään tuloslistauksessa
     vaadi_admin(x_admin_token)
     vartiot_rows = db.execute("SELECT DISTINCT vartio FROM suoritukset ORDER BY vartio").fetchall()
-    return [_vartio_tulokset(v["vartio"]) for v in vartiot_rows]
+    rajat = _ajanoton_rajat()
+    return [_vartio_tulokset(v["vartio"], rajat) for v in vartiot_rows]
 
 @router.get("/api/tulokset/{vartio}")
 def get_tulokset_vartio(vartio: str, x_admin_token: str = Header(None)):
     # Palauttaa yhden vartion tulokset kaikilla rasteilla
     vaadi_admin(x_admin_token)
-    return _vartio_tulokset(vartio)
+    return _vartio_tulokset(vartio, _ajanoton_rajat())
 
-def _vartio_tulokset(vartio: str) -> dict:
+def _ajanoton_rajat() -> dict:
+    # Nopein ja hitain aika jokaiselle ajanotto-tehtävälle sarjoittain: (tyyppi, id, sarja) -> (min, max)
+    rajat: dict = {}
+    for tyyppi, taulu, tulostaulu, sarake in (("t", "tehtavat", "tehtava_tulokset", "tehtava_id"),
+                                              ("o", "osatehtavat", "osatehtava_tulokset", "osatehtava_id")):
+        rows = db.execute(f"""
+            SELECT x.id, v.sarja, tu.aika_sekuntia AS aika
+            FROM {tulostaulu} tu
+            JOIN {taulu} x ON x.id = tu.{sarake}
+            JOIN suoritukset s ON s.id = tu.suoritus_id
+            JOIN vartiot v ON v.nimi = s.vartio
+            WHERE x.tyyppi = 'ajanotto' AND tu.aika_sekuntia IS NOT NULL
+        """).fetchall()
+        for r in rows:
+            avain = (tyyppi, r["id"], r["sarja"] or "")
+            lo, hi = rajat.get(avain, (r["aika"], r["aika"]))
+            rajat[avain] = (min(lo, r["aika"]), max(hi, r["aika"]))
+    return rajat
+
+def _interpoloi_pisteet(rivi: dict, tyyppi: str, sarja: str, rajat: dict) -> None:
+    # Ajanotto-tehtävän pisteet suoraviivaisesti sarjan nopeimman (max pistettä) ja hitaimman (0 p) ajan välillä.
+    # Jos vain yksi aika tai kaikki samat, saa maksimin. Ilman max-pisteitä tai aikaa jää syötetty arvo.
+    if rivi["tyyppi"] != "ajanotto" or rivi["aika_sekuntia"] is None or rivi["max_pisteet"] is None:
+        return
+    lo, hi = rajat[(tyyppi, rivi["id"], sarja)]
+    osuus = 0 if hi == lo else (rivi["aika_sekuntia"] - lo) / (hi - lo)
+    rivi["pisteet"] = round(rivi["max_pisteet"] * (1 - osuus), 1)
+
+def _vartio_tulokset(vartio: str, rajat: dict) -> dict:
+    vrow = db.execute("SELECT sarja, numero FROM vartiot WHERE nimi=?", (vartio,)).fetchone()
+    sarja = (vrow["sarja"] if vrow else "") or ""
     suoritukset = db.execute(
         "SELECT s.id, s.rasti_id, r.numero, s.kommentti FROM suoritukset s JOIN rastit r ON r.id=s.rasti_id WHERE s.vartio=? ORDER BY r.jarjestys, r.id",
         (vartio,)
@@ -155,7 +186,10 @@ def _vartio_tulokset(vartio: str) -> dict:
                 WHERE o.tehtava_id=? ORDER BY o.jarjestys, o.id
             """, (s["id"], t["id"])).fetchall()
             td = dict(t)
+            _interpoloi_pisteet(td, "t", sarja, rajat)
             td["osatehtavat"] = [dict(o) for o in osa_rows]
+            for o in td["osatehtavat"]:
+                _interpoloi_pisteet(o, "o", sarja, rajat)
             tehtavat_data.append(td)
         rasti_data.append({
             "suoritus_id": s["id"],
@@ -164,7 +198,6 @@ def _vartio_tulokset(vartio: str) -> dict:
             "kommentti": s["kommentti"],
             "tehtavat": tehtavat_data,
         })
-    vrow = db.execute("SELECT sarja, numero FROM vartiot WHERE nimi=?", (vartio,)).fetchone()
     return {
         "vartio": vartio,
         "sarja": vrow["sarja"] if vrow else "",

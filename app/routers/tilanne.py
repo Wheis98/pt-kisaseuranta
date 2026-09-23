@@ -85,12 +85,12 @@ def tilanne(numero: str = ""):
             "SELECT DISTINCT vartio FROM leimaukset WHERE numero=? AND tyyppi='ulos'", (numero,)
         ).fetchall())
 
+    viimeisimmat = {r["vartio"]: r for r in db.execute(
+        "SELECT vartio, numero, tyyppi, aika FROM leimaukset WHERE id IN (SELECT MAX(id) FROM leimaukset GROUP BY vartio)")}
+
     result = []
     for v in vartiot_rows:
-        last = db.execute(
-            "SELECT numero, tyyppi, aika FROM leimaukset WHERE vartio=? ORDER BY id DESC LIMIT 1",
-            (v["nimi"],)
-        ).fetchone()
+        last = viimeisimmat.get(v["nimi"])
 
         arvioitu_saapuminen = None
         siirtyma_lahde = None

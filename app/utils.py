@@ -12,7 +12,18 @@ def vaadi_admin(x_admin_token: str = Header(None)):
     if not x_admin_token or x_admin_token not in admin_sessions:
         raise HTTPException(status_code=403, detail="Vaatii admin-oikeudet")
 
+_mediaani_cache = {"aika": 0.0, "arvo": {}}
+_MEDIAANI_TTL_S = 30
+
 def laske_siirtyma_mediaanit():
+    # Välimuisti: mediaanit muuttuvat harvoin, mutta niitä haetaan jokaisen käyttäjän tilannepäivityksessä
+    import time
+    if time.monotonic() - _mediaani_cache["aika"] > _MEDIAANI_TTL_S:
+        _mediaani_cache["arvo"] = _laske_siirtyma_mediaanit()
+        _mediaani_cache["aika"] = time.monotonic()
+    return _mediaani_cache["arvo"]
+
+def _laske_siirtyma_mediaanit():
     # Laskee mediaanisiirtymäajan jokaiselle rasti→rasti-parille toteutuneiden leimausten perusteella.
     # Palauttaa dict: "A→B" -> {mediaani: float, n: int}. Alle 2 havaintoa ei riitä ennusteeseen.
     from datetime import datetime
@@ -23,13 +34,12 @@ def laske_siirtyma_mediaanit():
             except: pass
         return None
 
-    vartiot = db.execute("SELECT DISTINCT vartio FROM leimaukset").fetchall()
+    kaikki = db.execute("SELECT vartio, numero, tyyppi, aika FROM leimaukset ORDER BY id").fetchall()
+    per_vartio: dict = {}
+    for l in kaikki:
+        per_vartio.setdefault(l["vartio"], []).append(l)
     siirtymat: dict = {}
-    for v in vartiot:
-        leimaukset = db.execute(
-            "SELECT numero, tyyppi, aika FROM leimaukset WHERE vartio=? ORDER BY id",
-            (v["vartio"],)
-        ).fetchall()
+    for leimaukset in per_vartio.values():
         for i in range(len(leimaukset) - 1):
             curr, nxt = leimaukset[i], leimaukset[i + 1]
             if curr["tyyppi"] == "ulos" and nxt["tyyppi"] == "sisaan":

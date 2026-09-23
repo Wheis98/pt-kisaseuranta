@@ -2,14 +2,34 @@ from pathlib import Path
 from pydantic import BaseModel
 import os
 import sqlite3
+import threading
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-# Yhdistetään SQLite-tietokantaan. check_same_thread=False sallii saman yhteyden eri säikeistä.
+class _Tietokanta:
+    """Antaa jokaiselle säikeelle oman SQLite-yhteyden, jolloin yhden pyynnön commit ei vahvista toisen
+    pyynnön keskeneräisiä kirjoituksia. Muu koodi käyttää tätä kuten tavallista yhteyttä (db.execute, db.commit)."""
+    def __init__(self, polku):
+        self._polku = str(polku)
+        self._local = threading.local()
+        # Muistitietokanta on olemassa vain yhdessä yhteydessä, joten sille käytetään jaettua yhteyttä
+        self._jaettu = self._yhteys(check_same_thread=False) if self._polku == ":memory:" else None
+
+    def _yhteys(self, check_same_thread=True):
+        c = sqlite3.connect(self._polku, timeout=10, check_same_thread=check_same_thread)  # timeout: odottaa toisen kirjoituksen valmistumista
+        c.row_factory = sqlite3.Row  # palauttaa rivit dict-tyylisesti nimen perusteella
+        return c
+
+    def __getattr__(self, nimi):
+        c = self._jaettu or getattr(self._local, "c", None)
+        if c is None:
+            c = self._local.c = self._yhteys()
+        return getattr(c, nimi)
+
+# Yhdistetään SQLite-tietokantaan.
 # KIPA_DB-ympäristömuuttujalla voi käyttää toista tietokantaa (esim. testaukseen).
-db = sqlite3.connect(os.environ.get("KIPA_DB") or BASE_DIR.parent / "kipa.db", check_same_thread=False)
-db.row_factory = sqlite3.Row  # palauttaa rivit dict-tyylisesti nimen perusteella
+db = _Tietokanta(os.environ.get("KIPA_DB") or BASE_DIR.parent / "kipa.db")
 
 # Luodaan taulut jos niitä ei vielä ole
 db.executescript("""
