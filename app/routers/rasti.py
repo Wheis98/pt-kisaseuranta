@@ -67,8 +67,9 @@ def update_rasti(rasti_id: int, r: RastiIn, x_admin_token: str = Header(None)):
 
 @router.delete("/api/rasti/{rasti_id}")
 def delete_rasti(rasti_id: int, x_admin_token: str = Header(None)):
-    # Poistaa rastin
+    # Poistaa rastin ja sen sarjakohtaiset reittimerkinnät
     vaadi_admin(x_admin_token)
+    db.execute("DELETE FROM sarja_rastit WHERE rasti_id=?", (rasti_id,))
     db.execute("DELETE FROM rastit WHERE id=?", (rasti_id,))
     db.commit()
     return {"ok": True}

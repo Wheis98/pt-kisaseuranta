@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Sarjat</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .sarja-chip { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; background:var(--card); border:1.5px solid var(--border); border-radius:20px; cursor:pointer; font-weight:600; font-size:.88rem; }
+    .sarja-chip.active { border-color:var(--primary); background:#eef2ff; color:var(--primary); }
+    .sarja-chip button { border:none; background:none; color:var(--muted); cursor:pointer; font-size:.9rem; line-height:1; padding:0 2px; }
+    .rasti-item { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--card); border:1.5px solid var(--border); border-radius:10px; margin-bottom:4px; }
+    .rasti-item.dragging { opacity:.4; }
+    .rasti-item.drag-over { border-color:var(--primary); background:#eef2ff; }
+    .rasti-num { font-size:.8rem; font-weight:700; color:var(--muted); min-width:20px; }
+    .rasti-name { font-weight:700; flex:1; }
+    .puuttuu-item { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border:1.5px dashed var(--border); border-radius:10px; margin-bottom:4px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Hallitse sarjoja</span>
+  </div>
+  <div class="header-right">
+    <a href="rastit.html" class="btn btn-white btn-sm">← Rastit</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Sarjojen hallinta — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Sarjan luominen</h3>
+      <ul>
+        <li>Syötä sarjan nimi (esim. sama teksti kuin vartioiden "Sarja"-kentässä) ja paina <strong>Lisää sarja</strong>.</li>
+      </ul>
+      <h3>Reitin muokkaus</h3>
+      <ul>
+        <li>Valitse sarja yläreunan listasta.</li>
+        <li>Raahaa rasteja "Sarjan reitti" -listassa muuttaaksesi järjestystä — tallentuu automaattisesti.</li>
+        <li>Siirrä rasti <strong>+ Lisää reitille</strong> -napilla "Ei mukana reitillä" -listasta, jos sarjan pitää käydä sillä.</li>
+        <li>Paina <strong>✕ Poista reitiltä</strong> jos sarja ei käy kyseisellä rastilla — leimaus onnistuu silti, mutta rasti ei vaikuta sarjan "Tulossa"-ennusteeseen.</li>
+        <li>Jos sarjalle ei ole asetettu yhtään rastia reitille, käytetään rastien yleistä oletusjärjestystä.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="container-wide">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Lisää sarja</div>
+    <div id="virhe" class="msg msg-error" style="display:none"></div>
+    <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="flex:2;min-width:160px;margin-bottom:0">
+        <label>Sarjan nimi</label>
+        <input type="text" id="uusi-nimi" placeholder="esim. Samoajat">
+      </div>
+      <button class="btn btn-primary" style="margin-bottom:0;height:44px" onclick="lisaaSarja()">Lisää sarja</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Sarjat</div>
+    <div id="sarja-lista" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+
+  <div class="card" id="reitti-osio" style="display:none">
+    <div class="card-title" id="reitti-otsikko">Sarjan reitti</div>
+    <div id="reitti-lista"></div>
+  </div>
+
+  <div class="card" id="puuttuu-osio" style="display:none">
+    <div class="card-title">Ei mukana reitillä</div>
+    <div id="puuttuu-lista"></div>
+  </div>
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "Content-Type":"application/json", "x-admin-token":adminToken }; }
+
+let sarjat = [];
+let valittuId = null;
+let mukana = [];
+let puuttuu = [];
+let dragSrcIdx = null;
+
+async function lataaSarjat() {
+  const res = await fetch("/api/sarjat");
+  sarjat = await res.json();
+  renderSarjaLista();
+  if (valittuId && !sarjat.some(s => s.id === valittuId)) { valittuId = null; }
+  if (valittuId) await lataaReitti(); else naytaReittiOsiot(false);
+}
+
+function renderSarjaLista() {
+  const div = document.getElementById("sarja-lista");
+  if (!sarjat.length) { div.innerHTML = "<p style='color:var(--muted);font-size:.9rem'>Ei sarjoja vielä.</p>"; return; }
+  div.innerHTML = "";
+  sarjat.forEach(s => {
+    const chip = document.createElement("div");
+    chip.className = "sarja-chip" + (s.id === valittuId ? " active" : "");
+    chip.innerHTML = `<span onclick="valitseSarja(${s.id})">${s.nimi}</span> <button onclick="event.stopPropagation();poistaSarja(${s.id})" title="Poista sarja">✕</button>`;
+    div.appendChild(chip);
+  });
+}
+
+async function lisaaSarja() {
+  const nimi = document.getElementById("uusi-nimi").value.trim();
+  const virhe = document.getElementById("virhe");
+  virhe.style.display = "none";
+  if (!nimi) { virhe.textContent = "Syötä sarjan nimi."; virhe.style.display = "flex"; return; }
+  const res = await fetch("/api/sarja", { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi}) });
+  if (!res.ok) { const e = await res.json(); virhe.textContent = e.detail; virhe.style.display = "flex"; return; }
+  document.getElementById("uusi-nimi").value = "";
+  await lataaSarjat();
+}
+
+async function poistaSarja(id) {
+  if (!confirm("Poistetaanko sarja? Reittimääritys häviää, vartioiden sarja-kenttä ei muutu.")) return;
+  await fetch("/api/sarja/"+id, { method:"DELETE", headers:adminHeaders() });
+  if (valittuId === id) valittuId = null;
+  await lataaSarjat();
+}
+
+function valitseSarja(id) {
+  valittuId = id;
+  renderSarjaLista();
+  lataaReitti();
+}
+
+function naytaReittiOsiot(nayta) {
+  document.getElementById("reitti-osio").style.display = nayta ? "block" : "none";
+  document.getElementById("puuttuu-osio").style.display = nayta ? "block" : "none";
+}
+
+async function lataaReitti() {
+  const res = await fetch("/api/sarja/"+valittuId+"/rastit");
+  const data = await res.json();
+  mukana = data.mukana;
+  puuttuu = data.puuttuu;
+  const sarja = sarjat.find(s => s.id === valittuId);
+  document.getElementById("reitti-otsikko").textContent = "Sarjan reitti — " + (sarja ? sarja.nimi : "");
+  naytaReittiOsiot(true);
+  renderReitti();
+}
+
+function renderReitti() {
+  const ul = document.getElementById("reitti-lista");
+  ul.innerHTML = "";
+  if (!mukana.length) {
+    ul.innerHTML = "<p style='color:var(--muted);font-size:.9rem'>Ei rasteja reitillä — käytetään rastien oletusjärjestystä.</p>";
+  }
+  mukana.forEach((r, i) => {
+    const li = document.createElement("div");
+    li.className = "rasti-item"; li.draggable = true; li.dataset.idx = i;
+    li.innerHTML = `
+      <span class="drag-handle">⠿</span>
+      <span class="rasti-num">${i+1}</span>
+      <span class="rasti-name">${r.numero}</span>
+      <button class="btn btn-ghost btn-xs" onclick="poistaReitilta(${i})">✕ Poista reitiltä</button>
+    `;
+    li.addEventListener("dragstart", e => { dragSrcIdx=i; li.classList.add("dragging"); e.dataTransfer.effectAllowed="move"; });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragover", e => { e.preventDefault(); document.querySelectorAll("#reitti-lista .rasti-item").forEach(el=>el.classList.remove("drag-over")); li.classList.add("drag-over"); });
+    li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
+    li.addEventListener("drop", async e => { e.preventDefault(); li.classList.remove("drag-over"); if (dragSrcIdx===null||dragSrcIdx===i) return; const s=mukana.splice(dragSrcIdx,1)[0]; mukana.splice(i,0,s); dragSrcIdx=null; renderReitti(); await tallennaReitti(); });
+    ul.appendChild(li);
+  });
+
+  const pul = document.getElementById("puuttuu-lista");
+  pul.innerHTML = "";
+  if (!puuttuu.length) {
+    pul.innerHTML = "<p style='color:var(--muted);font-size:.9rem'>Kaikki rastit ovat reitillä.</p>";
+  }
+  puuttuu.forEach(r => {
+    const li = document.createElement("div");
+    li.className = "puuttuu-item";
+    li.innerHTML = `<span class="rasti-name" style="flex:1">${r.numero}</span><button class="btn btn-ghost btn-xs" onclick="lisaaReitille(${r.id})">+ Lisää reitille</button>`;
+    pul.appendChild(li);
+  });
+}
+
+async function poistaReitilta(idx) {
+  mukana.splice(idx, 1);
+  renderReitti();
+  await tallennaReitti();
+  await lataaReitti();
+}
+
+async function lisaaReitille(rastiId) {
+  const rasti = puuttuu.find(r => r.id === rastiId);
+  if (!rasti) return;
+  mukana.push(rasti);
+  renderReitti();
+  await tallennaReitti();
+  await lataaReitti();
+}
+
+async function tallennaReitti() {
+  await fetch("/api/sarja/"+valittuId+"/rastit", { method:"POST", headers:adminHeaders(), body:JSON.stringify({jarjestys: mukana.map(r=>r.id)}) });
+}
+
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); if(e.key==="Enter" && document.activeElement.id==="uusi-nimi") lisaaSarja(); });
+
+lataaSarjat();
+</script>
+</body>
+</html>

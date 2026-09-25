@@ -9,7 +9,7 @@ if __name__ == "__main__":
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from app import STATIC_DIR
-from app.routers import asetus, leimaus, login, rasti, tehtava, tilanne, tulos, user, vartio
+from app.routers import asetus, leimaus, login, rasti, sarja, tehtava, tilanne, tulos, user, vartio
 from app.internal import admin
 
 app = FastAPI()
@@ -18,6 +18,7 @@ app.include_router(asetus.router)
 app.include_router(leimaus.router)
 app.include_router(login.router)
 app.include_router(rasti.router)
+app.include_router(sarja.router)
 app.include_router(tehtava.router)
 app.include_router(tilanne.router)
 app.include_router(tulos.router)

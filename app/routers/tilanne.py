@@ -67,17 +67,24 @@ def tilanne(numero: str = ""):
     from datetime import datetime, timedelta
 
     rastit_rows = db.execute("SELECT numero, siirtyma_min FROM rastit ORDER BY jarjestys, id").fetchall()
-    rasti_lista = [r["numero"] for r in rastit_rows]
+    oletus_rasti_lista = [r["numero"] for r in rastit_rows]
     siirtyma_map = {r["numero"]: r["siirtyma_min"] for r in rastit_rows}
     mediaanit = laske_siirtyma_mediaanit()
 
-    # Selvitetään mikä rasti on järjestyksessä ennen pyydettävää rastia
-    prev_rasti = None
-    if numero and numero in rasti_lista:
-        idx = rasti_lista.index(numero)
-        prev_rasti = rasti_lista[idx - 1] if idx > 0 else None
+    # Sarjalla voi olla oma reittijärjestys (ks. app/routers/sarja.py) — jos sarjaa ei ole
+    # määritelty tai sille ei ole asetettu reittiä, käytetään rastien oletusjärjestystä.
+    reitti_cache: dict = {}
+    def sarjan_reitti(sarja_nimi):
+        if sarja_nimi not in reitti_cache:
+            sarja_row = db.execute("SELECT id FROM sarjat WHERE nimi=?", (sarja_nimi,)).fetchone() if sarja_nimi else None
+            rivit = db.execute("""
+                SELECT r.numero FROM sarja_rastit sr JOIN rastit r ON r.id = sr.rasti_id
+                WHERE sr.sarja_id=? ORDER BY sr.jarjestys, sr.id
+            """, (sarja_row["id"],)).fetchall() if sarja_row else []
+            reitti_cache[sarja_nimi] = [x["numero"] for x in rivit] if rivit else oletus_rasti_lista
+        return reitti_cache[sarja_nimi]
 
-    vartiot_rows = db.execute("SELECT nimi FROM vartiot ORDER BY nimi").fetchall()
+    vartiot_rows = db.execute("SELECT nimi, sarja FROM vartiot ORDER BY nimi").fetchall()
 
     kaynneet_set = set()
     if numero:
@@ -91,6 +98,14 @@ def tilanne(numero: str = ""):
     result = []
     for v in vartiot_rows:
         last = viimeisimmat.get(v["nimi"])
+
+        # Selvitetään mikä rasti on vartion oman sarjan reitillä järjestyksessä ennen pyydettävää rastia
+        prev_rasti = None
+        if numero:
+            oma_reitti = sarjan_reitti(v["sarja"])
+            if numero in oma_reitti:
+                idx = oma_reitti.index(numero)
+                prev_rasti = oma_reitti[idx - 1] if idx > 0 else None
 
         arvioitu_saapuminen = None
         siirtyma_lahde = None

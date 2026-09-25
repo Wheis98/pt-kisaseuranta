@@ -157,6 +157,17 @@ CREATE TABLE IF NOT EXISTS oikeus_pyynnot (
   aika TEXT NOT NULL,
   UNIQUE(user_id, rasti_id)
 );
+CREATE TABLE IF NOT EXISTS sarjat (
+  id INTEGER PRIMARY KEY,
+  nimi TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS sarja_rastit (
+  id INTEGER PRIMARY KEY,
+  sarja_id INTEGER NOT NULL,
+  rasti_id INTEGER NOT NULL,
+  jarjestys INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(sarja_id, rasti_id)
+);
 """)
 
 # Migraatio: poistetaan virheellisesti lisätty rastinumero users-taulusta
@@ -326,6 +337,14 @@ class RastiIn(BaseModel):
 
 class RastiJarjestysIn(BaseModel):
     jarjestys: list[int]  # lista rasti-id:istä halutussa järjestyksessä
+
+
+class SarjaIn(BaseModel):
+    nimi: str
+
+
+class SarjaRastitIn(BaseModel):
+    jarjestys: list[int]  # lista rasti-id:istä sarjan reitillä halutussa järjestyksessä — poisjätetyt rastit eivät kuulu sarjan reittiin
 
 
 class AdminIn(BaseModel):
