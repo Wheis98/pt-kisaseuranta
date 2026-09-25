@@ -29,6 +29,11 @@
         <li>Syötä vartion nimi, numero, sarja, lippukunta ja piiri, paina <strong>Luo vartio</strong>.</li>
         <li>Jokainen vartio saa uniikin QR-koodin.</li>
       </ul>
+      <h3>Vartion muokkaus</h3>
+      <ul>
+        <li>Paina <strong>Muokkaa</strong>-nappia listassa täyttääksesi lomakkeen vartion nykyisillä tiedoilla.</li>
+        <li>Tallennus ei muuta vartion QR-koodia (token pysyy samana).</li>
+      </ul>
       <h3>QR-koodin tulostus</h3>
       <ul>
         <li>Uuden vartion luonnin jälkeen QR-koodi näytetään automaattisesti.</li>
@@ -53,7 +58,7 @@
   <!-- Lomake -->
   <div id="lomake-osio" style="margin-top:24px">
     <div class="card">
-      <div class="card-title">Luo vartio</div>
+      <div class="card-title" id="lomake-otsikko">Luo vartio</div>
       <div id="virhe" class="msg msg-error" style="display:none"></div>
       <div class="field">
         <label for="nimi">Vartion nimi</label>
@@ -76,6 +81,7 @@
         <input type="text" id="piiri" placeholder="esim. Hämeen Partiopiiri" autocomplete="off">
       </div>
       <button class="btn btn-primary btn-block" id="btn" onclick="luoVartio()">Luo vartio</button>
+      <button class="btn btn-ghost btn-block" id="btn-peruuta" style="display:none;margin-top:6px" onclick="peruutaMuokkaus()">Peruuta muokkaus</button>
     </div>
 
     <!-- Vartiolista -->
@@ -110,6 +116,8 @@ const adminToken = localStorage.getItem("admin_token");
 if (!adminToken) window.location.href = "/admin.html";
 function adminHeaders() { return { "Content-Type": "application/json", "x-admin-token": adminToken }; }
 
+let muokattavaId = null;
+
 async function luoVartio() {
   const nimi = document.getElementById("nimi").value.trim();
   const numero = document.getElementById("numero").value.trim();
@@ -120,15 +128,51 @@ async function luoVartio() {
   virhe.style.display="none";
   if (!nimi) { virhe.textContent="Syötä vartion nimi."; virhe.style.display="flex"; return; }
   const btn = document.getElementById("btn");
+  const alkuperainenTeksti = muokattavaId ? "Tallenna muutokset" : "Luo vartio";
   btn.disabled=true; btn.textContent="Tallennetaan…";
-  const res = await fetch("/api/vartio", { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi,numero,sarja,lippukunta,piiri}) });
+  const url = muokattavaId ? "/api/vartio/"+muokattavaId : "/api/vartio";
+  const method = muokattavaId ? "PUT" : "POST";
+  const res = await fetch(url, { method, headers:adminHeaders(), body:JSON.stringify({nimi,numero,sarja,lippukunta,piiri}) });
   if (!res.ok) {
     if (res.status===403) { window.location.href="/admin.html"; return; }
     virhe.textContent="Virhe tallennuksessa."; virhe.style.display="flex";
-    btn.disabled=false; btn.textContent="Luo vartio"; return;
+    btn.disabled=false; btn.textContent=alkuperainenTeksti; return;
   }
-  naytaQR(await res.json());
-  lataaLista();
+  if (muokattavaId) {
+    peruutaMuokkaus();
+    lataaLista();
+  } else {
+    naytaQR(await res.json());
+    lataaLista();
+  }
+}
+
+function muokkaa(v) {
+  muokattavaId = v.id;
+  document.getElementById("nimi").value = v.nimi || "";
+  document.getElementById("numero").value = v.numero || "";
+  document.getElementById("sarja").value = v.sarja || "";
+  document.getElementById("lippukunta").value = v.lippukunta || "";
+  document.getElementById("piiri").value = v.piiri || "";
+  document.getElementById("virhe").style.display = "none";
+  document.getElementById("lomake-otsikko").textContent = "Muokkaa vartiota";
+  document.getElementById("btn").textContent = "Tallenna muutokset";
+  document.getElementById("btn-peruuta").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function peruutaMuokkaus() {
+  muokattavaId = null;
+  document.getElementById("nimi").value = "";
+  document.getElementById("numero").value = "";
+  document.getElementById("sarja").value = "";
+  document.getElementById("lippukunta").value = "";
+  document.getElementById("piiri").value = "";
+  document.getElementById("virhe").style.display = "none";
+  document.getElementById("lomake-otsikko").textContent = "Luo vartio";
+  const btn = document.getElementById("btn");
+  btn.disabled = false; btn.textContent = "Luo vartio";
+  document.getElementById("btn-peruuta").style.display = "none";
 }
 
 function naytaQR(vartio) {
@@ -181,6 +225,7 @@ async function lataaLista() {
         <div class="list-item-meta">${lisatiedot || "&nbsp;"}</div>
       </div>
       <button class="btn btn-ghost btn-xs" onclick='tulostaQR(${JSON.stringify(v)})'>QR</button>
+      <button class="btn btn-ghost btn-xs" onclick='muokkaa(${JSON.stringify(v)})'>Muokkaa</button>
       <button class="btn btn-danger btn-xs" onclick="poista(${v.id})">Poista</button>
     `;
     div.appendChild(item);
