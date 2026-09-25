@@ -76,17 +76,19 @@ CREATE TABLE IF NOT EXISTS tehtavat (
   id INTEGER PRIMARY KEY,
   rasti_id INTEGER NOT NULL,
   nimi TEXT NOT NULL,
-  tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto')),
+  tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto','kaava')),
   max_pisteet REAL,
-  jarjestys INTEGER NOT NULL DEFAULT 0
+  jarjestys INTEGER NOT NULL DEFAULT 0,
+  kaava TEXT
 );
 CREATE TABLE IF NOT EXISTS osatehtavat (
   id INTEGER PRIMARY KEY,
   tehtava_id INTEGER NOT NULL,
   nimi TEXT NOT NULL,
-  tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto')),
+  tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto','kaava')),
   max_pisteet REAL,
-  jarjestys INTEGER NOT NULL DEFAULT 0
+  jarjestys INTEGER NOT NULL DEFAULT 0,
+  kaava TEXT
 );
 CREATE TABLE IF NOT EXISTS suoritukset (
   id INTEGER PRIMARY KEY,
@@ -156,6 +158,24 @@ CREATE TABLE IF NOT EXISTS oikeus_pyynnot (
   rasti_id INTEGER NOT NULL,
   aika TEXT NOT NULL,
   UNIQUE(user_id, rasti_id)
+);
+CREATE TABLE IF NOT EXISTS syotemaaritteet (
+  id INTEGER PRIMARY KEY,
+  taso TEXT NOT NULL CHECK(taso IN ('tehtava','osatehtava')),
+  kohde_id INTEGER NOT NULL,
+  nimi TEXT NOT NULL,
+  kuvaus TEXT NOT NULL DEFAULT '',
+  tyyppi TEXT NOT NULL CHECK(tyyppi IN ('aika','piste')),
+  jarjestys INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(taso, kohde_id, nimi)
+);
+CREATE TABLE IF NOT EXISTS syote_arvot (
+  id INTEGER PRIMARY KEY,
+  suoritus_id INTEGER NOT NULL,
+  syotemaarite_id INTEGER NOT NULL,
+  arvo REAL NOT NULL,
+  paivitetty TEXT NOT NULL,
+  UNIQUE(suoritus_id, syotemaarite_id)
 );
 CREATE TABLE IF NOT EXISTS sarjat (
   id INTEGER PRIMARY KEY,
@@ -233,6 +253,56 @@ try:
 except Exception:
     pass
 
+# Migraatio: lisätään kaava-sarake tehtavat/osatehtavat-tauluihin (kaavapohyainen pisteytys)
+for taulu in ("tehtavat", "osatehtavat"):
+    try:
+        db.execute(f"ALTER TABLE {taulu} ADD COLUMN kaava TEXT")
+        db.commit()
+    except Exception:
+        pass
+
+# Migraatio: sallitaan tyyppi='kaava' tehtavat/osatehtavat-tauluissa.
+# CHECK(tyyppi IN (...)) on leivottu tauluun sen luontihetkellä, joten CREATE TABLE IF NOT EXISTS
+# ei päivitä sitä vanhoihin kantoihin — taulu pitää rakentaa uudelleen kertaalleen.
+def _salli_kaava_tyyppi(taulu):
+    rivi = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (taulu,)).fetchone()
+    if not rivi or not rivi["sql"] or "'kaava'" in rivi["sql"]:
+        return  # taulua ei vielä ole (executescript hoitaa oikean CHECK:n) tai jo migroitu
+    sarakkeet = [r["name"] for r in db.execute(f"PRAGMA table_info({taulu})").fetchall()]
+    kentat = ", ".join(sarakkeet)
+    db.execute(f"ALTER TABLE {taulu} RENAME TO {taulu}_vanha")
+    if taulu == "tehtavat":
+        db.execute("""
+            CREATE TABLE tehtavat (
+              id INTEGER PRIMARY KEY,
+              rasti_id INTEGER NOT NULL,
+              nimi TEXT NOT NULL,
+              tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto','kaava')),
+              max_pisteet REAL,
+              jarjestys INTEGER NOT NULL DEFAULT 0,
+              kaava TEXT
+            )
+        """)
+    else:
+        db.execute("""
+            CREATE TABLE osatehtavat (
+              id INTEGER PRIMARY KEY,
+              tehtava_id INTEGER NOT NULL,
+              nimi TEXT NOT NULL,
+              tyyppi TEXT NOT NULL CHECK(tyyppi IN ('pisteet','oikein_vaarin','ajanotto','kaava')),
+              max_pisteet REAL,
+              jarjestys INTEGER NOT NULL DEFAULT 0,
+              kaava TEXT
+            )
+        """)
+    db.execute(f"INSERT INTO {taulu} ({kentat}) SELECT {kentat} FROM {taulu}_vanha")
+    db.execute(f"DROP TABLE {taulu}_vanha")
+    db.commit()
+
+
+for _taulu in ("tehtavat", "osatehtavat"):
+    _salli_kaava_tyyppi(_taulu)
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -291,6 +361,7 @@ class TehtavaIn(BaseModel):
     tyyppi: str
     max_pisteet: float | None = None
     jarjestys: int = 0
+    kaava: str | None = None
 
 
 class OsatehtavaIn(BaseModel):
@@ -299,6 +370,18 @@ class OsatehtavaIn(BaseModel):
     tyyppi: str
     max_pisteet: float | None = None
     jarjestys: int = 0
+    kaava: str | None = None
+
+
+class SyoteMaariteIn(BaseModel):
+    nimi: str
+    kuvaus: str = ""
+    tyyppi: str  # 'aika' | 'piste'
+
+
+class KaavaTestIn(BaseModel):
+    kaava: str
+    muuttujat: dict[str, float] = {}
 
 
 class TulosIn(BaseModel):
@@ -308,6 +391,7 @@ class TulosIn(BaseModel):
     pisteet: float | None = None
     oikein: int | None = None
     aika_sekuntia: float | None = None
+    syotteet: dict[str, float] | None = None  # kaava-tyypin nimetyt raaka-arvot
     token: str | None = None
     aika: str
 

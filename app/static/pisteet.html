@@ -13,6 +13,9 @@
     .tyyppi-pisteet { background:#ede9fe; color:#5b21b6; }
     .tyyppi-oikein_vaarin { background:#dcfce7; color:#166534; }
     .tyyppi-ajanotto { background:#dbeafe; color:#1e40af; }
+    .tyyppi-kaava { background:#fef3c7; color:#92400e; }
+    .syote-input-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+    .syote-label { font-size:.82rem; color:var(--muted); min-width:70px; }
     .oikein-group { display:flex; gap:8px; }
     .oikein-btn { flex:1; padding:9px; border:2px solid var(--border); border-radius:8px; background:white; font-weight:600; cursor:pointer; font-size:.9rem; transition:all .12s; }
     .oikein-btn.sel-ok { border-color:var(--success); background:#dcfce7; color:#166534; }
@@ -90,7 +93,7 @@ function aikaMinSek(sekunnit) {
 }
 
 function tyyppiClass(t) { return 'tyyppi-badge tyyppi-'+t; }
-function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto'}[t]||t; }
+function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto',kaava:'Kaava'}[t]||t; }
 
 function oikeinBtn(id, prefix, existingOikein) {
   const isO = existingOikein === 1, isV = existingOikein === 0;
@@ -132,36 +135,78 @@ function recomputeParentTotal(t) {
   el.textContent = hasAny ? `Yhteensä: ${sum} p${max>0?' / '+max+' p':''}` : 'Yhteensä: —';
 }
 
+// Kaava-tyypin syötekentistä koostettu {nimi: arvo} tai null jos mitään ei ole täytetty
+function getSyoteArvot(item, prefix) {
+  const arvot = {};
+  let mikaanTaytetty = false;
+  (item.syotteet || []).forEach(s => {
+    const inputId = `${prefix}-syote-${item.id}-${s.nimi}`;
+    if (s.tyyppi === 'aika') {
+      const sekunnit = aikaKentista(inputId);
+      if (sekunnit !== null) { arvot[s.nimi] = sekunnit; mikaanTaytetty = true; }
+    } else {
+      const v = parseFloat(document.getElementById(inputId)?.value);
+      if (!isNaN(v)) { arvot[s.nimi] = v; mikaanTaytetty = true; }
+    }
+  });
+  return mikaanTaytetty ? arvot : null;
+}
+
 function getTehtavaScore(t) {
   if (t.tyyppi === 'pisteet') {
-    const v = parseFloat(document.getElementById(`t-${t.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null };
+    const v = parseFloat(document.getElementById(`t-${t.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null, syotteet:null };
   } else if (t.tyyppi === 'oikein_vaarin') {
     const o=document.getElementById(`t-ok-${t.id}`),v=document.getElementById(`t-no-${t.id}`);
     const oikein=o?.classList.contains('sel-ok')?1:v?.classList.contains('sel-no')?0:null;
-    return { pisteet: oikein!==null?(oikein?(t.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
+    return { pisteet: oikein!==null?(oikein?(t.max_pisteet??1):0):null, oikein, aika_sekuntia:null, syotteet:null };
+  } else if (t.tyyppi === 'kaava') {
+    return { pisteet:null, oikein:null, aika_sekuntia:null, syotteet: getSyoteArvot(t, 't') };
   } else {
     const aika=aikaKentista(`t-aika-${t.id}`);
     const pv=parseFloat(document.getElementById(`t-p-${t.id}`)?.value);
-    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
+    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika, syotteet:null };
   }
 }
 
 function getOsaScore(o) {
   if (o.tyyppi === 'pisteet') {
-    const v=parseFloat(document.getElementById(`o-${o.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null };
+    const v=parseFloat(document.getElementById(`o-${o.id}`)?.value); return { pisteet: isNaN(v)?null:v, oikein:null, aika_sekuntia:null, syotteet:null };
   } else if (o.tyyppi === 'oikein_vaarin') {
     const ob=document.getElementById(`o-ok-${o.id}`),vb=document.getElementById(`o-no-${o.id}`);
     const oikein=ob?.classList.contains('sel-ok')?1:vb?.classList.contains('sel-no')?0:null;
-    return { pisteet: oikein!==null?(oikein?(o.max_pisteet??1):0):null, oikein, aika_sekuntia:null };
+    return { pisteet: oikein!==null?(oikein?(o.max_pisteet??1):0):null, oikein, aika_sekuntia:null, syotteet:null };
+  } else if (o.tyyppi === 'kaava') {
+    return { pisteet:null, oikein:null, aika_sekuntia:null, syotteet: getSyoteArvot(o, 'o') };
   } else {
     const aika=aikaKentista(`o-aika-${o.id}`);
     const pv=parseFloat(document.getElementById(`o-p-${o.id}`)?.value);
-    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika };
+    return { pisteet: isNaN(pv)?null:pv, oikein:null, aika_sekuntia:aika, syotteet:null };
   }
 }
 
-function renderScore(tyyppi, id, prefix, existing, max, timerSek) {
-  if (tyyppi === 'pisteet') {
+function renderScore(tyyppi, id, prefix, existing, max, timerSek, syotteet, existingSyotteet) {
+  if (tyyppi === 'kaava') {
+    existingSyotteet = existingSyotteet || {};
+    if (!syotteet || !syotteet.length) return '<span class="max-hint">Tälle tehtävälle ei ole määritelty syötteitä.</span>';
+    return syotteet.map(s => {
+      const inputId = `${prefix}-syote-${id}-${s.nimi}`;
+      if (s.tyyppi === 'aika') {
+        const aikaVal = aikaMinSek(existingSyotteet[s.nimi]);
+        return `<div class="syote-input-row">
+          <span class="syote-label">${s.kuvaus || s.nimi}</span>
+          <input type="number" class="aika-input" id="${inputId}-m" value="${aikaVal.m}" placeholder="min" min="0" step="1">
+          <span class="max-hint">min</span>
+          <input type="number" class="aika-input" id="${inputId}-s" value="${aikaVal.s}" placeholder="sek" min="0" max="59" step="1">
+          <span class="max-hint">sek</span>
+        </div>`;
+      }
+      const v = existingSyotteet[s.nimi] ?? "";
+      return `<div class="syote-input-row">
+        <span class="syote-label">${s.kuvaus || s.nimi}</span>
+        <input type="number" class="score-input" id="${inputId}" value="${v}" placeholder="${s.nimi}" step="0.01">
+      </div>`;
+    }).join("");
+  } else if (tyyppi === 'pisteet') {
     const val = existing?.pisteet ?? "";
     return `<div class="score-row">
       <input type="number" class="score-input" id="${prefix}-${id}" value="${val}" placeholder="p" step="0.5" min="0" ${max!==null?`max="${max}"`:''}
@@ -200,7 +245,7 @@ function renderTehtavat(tehtavat, suoritus) {
 
     let scoreHTML = "";
     if (!hasOsa) {
-      scoreHTML = renderScore(t.tyyppi, t.id, 't', existingT, t.max_pisteet, timerSek);
+      scoreHTML = renderScore(t.tyyppi, t.id, 't', existingT, t.max_pisteet, timerSek, t.syotteet, suoritus.syotteet?.[`tehtava:${t.id}`]);
     }
 
     let osaHTML = "";
@@ -212,7 +257,7 @@ function renderTehtavat(tehtavat, suoritus) {
             <span class="osa-nimi">${o.nimi}</span>
             <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
           </div>
-          ${renderScore(o.tyyppi, o.id, 'o', existingO, o.max_pisteet, null)}
+          ${renderScore(o.tyyppi, o.id, 'o', existingO, o.max_pisteet, null, o.syotteet, suoritus.syotteet?.[`osatehtava:${o.id}`])}
         </div>`;
       }).join("");
       osaHTML += `<div class="parent-total" id="parent-total-${t.id}">Yhteensä: —</div>`;
@@ -264,15 +309,24 @@ function tarkistaRajat() {
       if (!ensimmainen) ensimmainen = el;
     }
   };
+  const tarkistaSyotteet = (item, prefix, nimi) => {
+    (item.syotteet || []).forEach(s => {
+      const inputId = `${prefix}-syote-${item.id}-${s.nimi}`;
+      if (s.tyyppi === 'aika') tarkistaAika(inputId, `${nimi} / ${s.kuvaus || s.nimi}`);
+      else tarkista(inputId, `${nimi} / ${s.kuvaus || s.nimi}`, null);
+    });
+  };
   for (const t of tehtavat) {
     if (t.osatehtavat && t.osatehtavat.length > 0) {
       for (const o of t.osatehtavat) {
         if (o.tyyppi === 'ajanotto') tarkistaAika(`o-aika-${o.id}`, `${t.nimi} / ${o.nimi}`);
         if (o.tyyppi === 'pisteet') tarkista(`o-${o.id}`, `${t.nimi} / ${o.nimi}`, o.max_pisteet);
         else if (o.tyyppi === 'ajanotto') tarkista(`o-p-${o.id}`, `${t.nimi} / ${o.nimi}`, o.max_pisteet);
+        else if (o.tyyppi === 'kaava') tarkistaSyotteet(o, 'o', `${t.nimi} / ${o.nimi}`);
       }
     } else if (t.tyyppi === 'pisteet') tarkista(`t-${t.id}`, t.nimi, t.max_pisteet);
     else if (t.tyyppi === 'ajanotto') { tarkistaAika(`t-aika-${t.id}`, t.nimi); tarkista(`t-p-${t.id}`, t.nimi, t.max_pisteet); }
+    else if (t.tyyppi === 'kaava') tarkistaSyotteet(t, 't', t.nimi);
   }
   if (ensimmainen) ensimmainen.focus();
   return virheet;
@@ -301,13 +355,13 @@ async function tallenna() {
       if (t.osatehtavat && t.osatehtavat.length > 0) {
         for (const o of t.osatehtavat) {
           const s = getOsaScore(o);
-          if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
+          if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null || s.syotteet !== null) {
             await tallennaTulos({suoritus_id:suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt});
           }
         }
       } else {
         const s = getTehtavaScore(t);
-        if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null) {
+        if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null || s.syotteet !== null) {
           await tallennaTulos({suoritus_id:suoritusId, tehtava_id:t.id, ...s, token, aika:nyt});
         }
       }

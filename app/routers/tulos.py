@@ -2,6 +2,7 @@ from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 from app import db, admin_sessions, sessions, SuoritusKommenttiIn, TulosIn, STATIC_DIR
 from app.utils import vaadi_admin
+from app.kaava import evaluoi, KaavaVirhe
 
 router = APIRouter()
 
@@ -46,11 +47,21 @@ def get_or_create_suoritus(vartio: str, rasti_id: int, token: str = "", x_admin_
     sid = row["id"]
     tt = db.execute("SELECT tehtava_id, pisteet, oikein, aika_sekuntia FROM tehtava_tulokset WHERE suoritus_id=?", (sid,)).fetchall()
     ot = db.execute("SELECT osatehtava_id, pisteet, oikein, aika_sekuntia FROM osatehtava_tulokset WHERE suoritus_id=?", (sid,)).fetchall()
+    syote_rows = db.execute("""
+        SELECT sm.taso, sm.kohde_id, sm.nimi, sa.arvo FROM syote_arvot sa
+        JOIN syotemaaritteet sm ON sm.id = sa.syotemaarite_id
+        WHERE sa.suoritus_id=?
+    """, (sid,)).fetchall()
+    syotteet: dict = {}
+    for r in syote_rows:
+        avain = f"{r['taso']}:{r['kohde_id']}"
+        syotteet.setdefault(avain, {})[r["nimi"]] = r["arvo"]
     return {
         "id": sid,
         "kommentti": row["kommentti"],
         "tehtava_tulokset": [dict(r) for r in tt],
         "osatehtava_tulokset": [dict(r) for r in ot],
+        "syotteet": syotteet,
     }
 
 @router.put("/api/suoritus/{suoritus_id}")
@@ -85,17 +96,48 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
     suoritus = db.execute("SELECT id, vartio, rasti_id FROM suoritukset WHERE id=?", (t.suoritus_id,)).fetchone()
     if not suoritus:
         raise HTTPException(status_code=404, detail="Suoritusta ei löydy")
-    # Pisteet eivät saa olla negatiivisia eikä ylittää tehtävän maksimia
-    if t.pisteet is not None:
-        if t.tehtava_id is not None:
-            rivi = db.execute("SELECT max_pisteet FROM tehtavat WHERE id=?", (t.tehtava_id,)).fetchone()
-        else:
-            rivi = db.execute("SELECT max_pisteet FROM osatehtavat WHERE id=?", (t.osatehtava_id,)).fetchone()
-        max_p = rivi["max_pisteet"] if rivi else None
-        if t.pisteet < 0:
+
+    if t.tehtava_id is not None:
+        taso, kohde_id = "tehtava", t.tehtava_id
+        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet FROM tehtavat WHERE id=?", (kohde_id,)).fetchone()
+    elif t.osatehtava_id is not None:
+        taso, kohde_id = "osatehtava", t.osatehtava_id
+        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet FROM osatehtavat WHERE id=?", (kohde_id,)).fetchone()
+    else:
+        raise HTTPException(status_code=400, detail="tehtava_id tai osatehtava_id vaaditaan")
+
+    pisteet = t.pisteet
+    if kohde and kohde["tyyppi"] == "kaava" and t.syotteet is not None:
+        # Kaava-tyypin pisteet lasketaan syötteistä, ei anneta suoraan — tallennetaan raaka-arvot
+        # ja lasketaan heti alustava pisteet (lopullinen arvo lasketaan aina tuoreena tulosten haussa,
+        # koska muiden vartioiden arvot voivat vielä muuttua).
+        from datetime import datetime
+        nyt = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        for nimi, arvo in t.syotteet.items():
+            sm = db.execute("SELECT id FROM syotemaaritteet WHERE taso=? AND kohde_id=? AND nimi=?", (taso, kohde_id, nimi)).fetchone()
+            if not sm:
+                raise HTTPException(status_code=400, detail=f"Tuntematon syöte: {nimi}")
+            db.execute("""
+                INSERT INTO syote_arvot (suoritus_id, syotemaarite_id, arvo, paivitetty) VALUES (?,?,?,?)
+                ON CONFLICT(suoritus_id, syotemaarite_id) DO UPDATE SET arvo=excluded.arvo, paivitetty=excluded.paivitetty
+            """, (t.suoritus_id, sm["id"], arvo, nyt))
+        db.commit()
+        if kohde["kaava"]:
+            vartion_sarja = db.execute("SELECT sarja FROM vartiot WHERE nimi=?", (suoritus["vartio"],)).fetchone()
+            sarja = (vartion_sarja["sarja"] if vartion_sarja else "") or ""
+            muuttujat = _kaavan_omat_arvot(t.suoritus_id, taso, kohde_id)
+            try:
+                pisteet = round(float(evaluoi(kohde["kaava"], muuttujat, _kaavan_kaikki_muuttujat(sarja, taso, kohde_id))), 1)
+            except KaavaVirhe:
+                pisteet = None
+    elif pisteet is not None:
+        # Pisteet eivät saa olla negatiivisia eikä ylittää tehtävän maksimia (ei koske kaava-laskettuja pisteitä)
+        max_p = kohde["max_pisteet"] if kohde else None
+        if pisteet < 0:
             raise HTTPException(status_code=400, detail="Pisteet eivät voi olla negatiivisia")
-        if max_p is not None and t.pisteet > max_p:
-            raise HTTPException(status_code=400, detail=f"Pisteet {t.pisteet:g} ylittävät maksimin {max_p:g}")
+        if max_p is not None and pisteet > max_p:
+            raise HTTPException(status_code=400, detail=f"Pisteet {pisteet:g} ylittävät maksimin {max_p:g}")
+
     if t.tehtava_id is not None:
         db.execute("""
             INSERT INTO tehtava_tulokset (suoritus_id, tehtava_id, pisteet, oikein, aika_sekuntia, paivitetty)
@@ -103,17 +145,15 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
             ON CONFLICT(suoritus_id, tehtava_id) DO UPDATE SET
               pisteet=excluded.pisteet, oikein=excluded.oikein,
               aika_sekuntia=excluded.aika_sekuntia, paivitetty=excluded.paivitetty
-        """, (t.suoritus_id, t.tehtava_id, t.pisteet, t.oikein, t.aika_sekuntia, t.aika))
-    elif t.osatehtava_id is not None:
+        """, (t.suoritus_id, t.tehtava_id, pisteet, t.oikein, t.aika_sekuntia, t.aika))
+    else:
         db.execute("""
             INSERT INTO osatehtava_tulokset (suoritus_id, osatehtava_id, pisteet, oikein, aika_sekuntia, paivitetty)
             VALUES (?,?,?,?,?,?)
             ON CONFLICT(suoritus_id, osatehtava_id) DO UPDATE SET
               pisteet=excluded.pisteet, oikein=excluded.oikein,
               aika_sekuntia=excluded.aika_sekuntia, paivitetty=excluded.paivitetty
-        """, (t.suoritus_id, t.osatehtava_id, t.pisteet, t.oikein, t.aika_sekuntia, t.aika))
-    else:
-        raise HTTPException(status_code=400, detail="tehtava_id tai osatehtava_id vaaditaan")
+        """, (t.suoritus_id, t.osatehtava_id, pisteet, t.oikein, t.aika_sekuntia, t.aika))
     merkitse_pisteytetyksi(suoritus["vartio"], suoritus["rasti_id"])
     db.commit()
     return {"ok": True}
@@ -124,13 +164,14 @@ def get_tulokset(x_admin_token: str = Header(None)):
     vaadi_admin(x_admin_token)
     vartiot_rows = db.execute("SELECT DISTINCT vartio FROM suoritukset ORDER BY vartio").fetchall()
     rajat = _ajanoton_rajat()
-    return [_vartio_tulokset(v["vartio"], rajat) for v in vartiot_rows]
+    kaikki_cache: dict = {}
+    return [_vartio_tulokset(v["vartio"], rajat, kaikki_cache) for v in vartiot_rows]
 
 @router.get("/api/tulokset/{vartio}")
 def get_tulokset_vartio(vartio: str, x_admin_token: str = Header(None)):
     # Palauttaa yhden vartion tulokset kaikilla rasteilla
     vaadi_admin(x_admin_token)
-    return _vartio_tulokset(vartio, _ajanoton_rajat())
+    return _vartio_tulokset(vartio, _ajanoton_rajat(), {})
 
 def _ajanoton_rajat() -> dict:
     # Nopein ja hitain aika jokaiselle ajanotto-tehtävälle sarjoittain: (tyyppi, id, sarja) -> (min, max)
@@ -160,7 +201,50 @@ def _interpoloi_pisteet(rivi: dict, tyyppi: str, sarja: str, rajat: dict) -> Non
     osuus = 0 if hi == lo else (rivi["aika_sekuntia"] - lo) / (hi - lo)
     rivi["pisteet"] = round(rivi["max_pisteet"] * (1 - osuus), 1)
 
-def _vartio_tulokset(vartio: str, rajat: dict) -> dict:
+def _kaavan_omat_arvot(suoritus_id: int, taso: str, kohde_id: int) -> dict:
+    # Tämän suorituksen omat syöte-arvot nimen mukaan: {nimi: arvo}
+    rows = db.execute("""
+        SELECT sm.nimi, sa.arvo FROM syote_arvot sa
+        JOIN syotemaaritteet sm ON sm.id = sa.syotemaarite_id
+        WHERE sa.suoritus_id=? AND sm.taso=? AND sm.kohde_id=?
+    """, (suoritus_id, taso, kohde_id)).fetchall()
+    return {r["nimi"]: r["arvo"] for r in rows}
+
+def _kaavan_kaikki_muuttujat(sarja: str, taso: str, kohde_id: int) -> list:
+    # Kaikkien saman sarjan vartioiden syöte-dictit tälle kohteelle — kaikki()-funktiota varten kaavassa
+    rows = db.execute("""
+        SELECT s.id AS suoritus_id, sm.nimi, sa.arvo
+        FROM syote_arvot sa
+        JOIN syotemaaritteet sm ON sm.id = sa.syotemaarite_id
+        JOIN suoritukset s ON s.id = sa.suoritus_id
+        JOIN vartiot v ON v.nimi = s.vartio
+        WHERE sm.taso=? AND sm.kohde_id=? AND COALESCE(v.sarja,'')=?
+    """, (taso, kohde_id, sarja)).fetchall()
+    per_suoritus: dict = {}
+    for r in rows:
+        per_suoritus.setdefault(r["suoritus_id"], {})[r["nimi"]] = r["arvo"]
+    return list(per_suoritus.values())
+
+def _laske_kaava_pisteet(rivi: dict, taso: str, kohde_id: int, suoritus_id: int, sarja: str, kaikki_cache: dict) -> None:
+    # Kaava-tyypin pisteet lasketaan aina tuoreena syöte-arvoista, koska muiden vartioiden arvot
+    # (kaikki()-funktio) voivat muuttua sitä mukaa kun uusia tuloksia syötetään.
+    if rivi["tyyppi"] != "kaava" or not rivi.get("kaava"):
+        rivi.pop("kaava", None)
+        return
+    kaava = rivi.pop("kaava")
+    muuttujat = _kaavan_omat_arvot(suoritus_id, taso, kohde_id)
+    if not muuttujat:
+        rivi["pisteet"] = None
+        return
+    key = (taso, kohde_id, sarja)
+    if key not in kaikki_cache:
+        kaikki_cache[key] = _kaavan_kaikki_muuttujat(sarja, taso, kohde_id)
+    try:
+        rivi["pisteet"] = round(float(evaluoi(kaava, muuttujat, kaikki_cache[key])), 1)
+    except KaavaVirhe:
+        rivi["pisteet"] = None
+
+def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
     vrow = db.execute("SELECT sarja, numero FROM vartiot WHERE nimi=?", (vartio,)).fetchone()
     sarja = (vrow["sarja"] if vrow else "") or ""
     suoritukset = db.execute(
@@ -170,7 +254,7 @@ def _vartio_tulokset(vartio: str, rajat: dict) -> dict:
     rasti_data = []
     for s in suoritukset:
         tt = db.execute("""
-            SELECT t.id, t.nimi, t.tyyppi, t.max_pisteet,
+            SELECT t.id, t.nimi, t.tyyppi, t.max_pisteet, t.kaava,
                    tt.pisteet, tt.oikein, tt.aika_sekuntia
             FROM tehtavat t
             LEFT JOIN tehtava_tulokset tt ON tt.tehtava_id=t.id AND tt.suoritus_id=?
@@ -179,7 +263,7 @@ def _vartio_tulokset(vartio: str, rajat: dict) -> dict:
         tehtavat_data = []
         for t in tt:
             osa_rows = db.execute("""
-                SELECT o.id, o.nimi, o.tyyppi, o.max_pisteet,
+                SELECT o.id, o.nimi, o.tyyppi, o.max_pisteet, o.kaava,
                        ot.pisteet, ot.oikein, ot.aika_sekuntia
                 FROM osatehtavat o
                 LEFT JOIN osatehtava_tulokset ot ON ot.osatehtava_id=o.id AND ot.suoritus_id=?
@@ -187,9 +271,11 @@ def _vartio_tulokset(vartio: str, rajat: dict) -> dict:
             """, (s["id"], t["id"])).fetchall()
             td = dict(t)
             _interpoloi_pisteet(td, "t", sarja, rajat)
+            _laske_kaava_pisteet(td, "tehtava", t["id"], s["id"], sarja, kaikki_cache)
             td["osatehtavat"] = [dict(o) for o in osa_rows]
             for o in td["osatehtavat"]:
                 _interpoloi_pisteet(o, "o", sarja, rajat)
+                _laske_kaava_pisteet(o, "osatehtava", o["id"], s["id"], sarja, kaikki_cache)
             tehtavat_data.append(td)
         rasti_data.append({
             "suoritus_id": s["id"],

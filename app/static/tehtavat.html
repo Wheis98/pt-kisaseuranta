@@ -12,6 +12,20 @@
     .tyyppi-pisteet { background:#ede9fe; color:#5b21b6; }
     .tyyppi-oikein_vaarin { background:#dcfce7; color:#166534; }
     .tyyppi-ajanotto { background:#dbeafe; color:#1e40af; }
+    .tyyppi-kaava { background:#fef3c7; color:#92400e; }
+    .kaava-textarea { width:100%; min-height:56px; font-family:monospace; font-size:.85rem; padding:7px 10px; border:1.5px solid var(--border); border-radius:6px; margin-top:4px; }
+    .kaava-editor { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; margin-top:4px; }
+    .kaava-editor .kaava-textarea { flex:1; min-width:220px; margin-top:0; }
+    .kaava-ohje { flex:1; min-width:260px; max-width:420px; background:#fffbeb; border:1.5px solid #fbbf24; border-radius:8px; padding:10px 12px; font-size:.78rem; color:#78350f; }
+    .kaava-ohje h4 { margin:0 0 4px; font-size:.82rem; }
+    .kaava-ohje table { width:100%; border-collapse:collapse; margin:4px 0; }
+    .kaava-ohje th, .kaava-ohje td { text-align:left; padding:3px 4px; border-bottom:1px solid #fde68a; vertical-align:top; }
+    .kaava-ohje code { background:#fef3c7; padding:1px 4px; border-radius:4px; font-family:monospace; }
+    .kaava-ohje p { margin:4px 0 0; }
+    .syote-osio { background:#fffbeb; border:1.5px solid #fbbf24; border-radius:8px; padding:10px 13px; margin:4px 0 8px 24px; }
+    .syote-rivi { display:flex; gap:6px; align-items:center; margin-bottom:4px; font-size:.85rem; }
+    .syote-rivi input, .syote-rivi select { padding:5px 8px; font-size:.83rem; border:1.5px solid var(--border); border-radius:6px; background:white; }
+    .kaava-tulos { font-size:.8rem; margin-top:4px; }
     .osatehtava-item { background:#f8fafc; border:1.5px solid var(--border); border-radius:8px; padding:10px 13px; margin:4px 0 4px 24px; display:flex; align-items:center; gap:10px; }
     .lisaa-osa-btn { margin-left:24px; margin-top:4px; margin-bottom:8px; }
     .edit-row { background:#f0f4ff; border:1.5px solid var(--primary); border-radius:8px; padding:10px 13px; margin-bottom:4px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
@@ -38,14 +52,20 @@
     <div id="virhe" class="msg msg-error" style="display:none"></div>
     <div class="edit-row" style="background:white;border:none;padding:0">
       <input type="text" id="uusi-nimi" placeholder="Tehtävän nimi" style="flex:2;min-width:120px">
-      <select id="uusi-tyyppi" style="flex:1;min-width:130px;padding:9px 10px;border:1.5px solid var(--border);border-radius:6px">
+      <select id="uusi-tyyppi" onchange="paivitaUusiTyyppi()" style="flex:1;min-width:130px;padding:9px 10px;border:1.5px solid var(--border);border-radius:6px">
         <option value="pisteet">Pisteet</option>
         <option value="oikein_vaarin">Oikein/Väärin</option>
         <option value="ajanotto">Ajanotto</option>
+        <option value="kaava">Kaava</option>
       </select>
       <input type="number" id="uusi-max" placeholder="Max p" min="0" step="0.5" style="width:90px">
       <button class="btn btn-primary" style="height:40px" onclick="lisaaTehtava()">Lisää</button>
     </div>
+    <div id="uusi-kaava-editor" class="kaava-editor" style="display:none">
+      <textarea id="uusi-kaava" class="kaava-textarea" placeholder="Kaava, esim. interpoloi(aikavali(alku,loppu), min(kaikki(aikavali(alku,loppu))), 10, max(kaikki(aikavali(alku,loppu))))"></textarea>
+      <div id="uusi-kaava-ohje" class="kaava-ohje"></div>
+    </div>
+    <p id="uusi-kaava-vinkki" style="display:none;font-size:.78rem;color:var(--muted);margin:4px 0 0">Syötteet (esim. "alku", "loppu") lisätään tehtävän luonnin jälkeen sen omasta "Syötteet"-painikkeesta.</p>
   </div>
 
   <div class="card">
@@ -67,6 +87,34 @@ if (!rastiId) window.location.href = "/rastit.html";
 let tehtavat = [];
 let editingId = null;
 
+function kaavaOhjeHTML() {
+  return `
+    <h4>Kaavan kirjoitusohje</h4>
+    <p>Käytä syötteiden nimiä (esim. <code>a</code>, <code>alku</code>) suoraan kaavassa.</p>
+    <table>
+      <tr><th>Käyttö</th><th>Esimerkki</th></tr>
+      <tr><td>Laskutoimitukset</td><td><code>a + b * 2</code></td></tr>
+      <tr><td><code>interpoloi(oma, paras, jaettavat, nolla=0)</code></td><td><code>interpoloi(a, 10, 10, 0)</code></td></tr>
+      <tr><td><code>aikavali(alku, loppu)</code></td><td><code>aikavali(alku, loppu)</code> — sekunteina, +24h jos ylittää vuorokausirajan</td></tr>
+      <tr><td><code>jos(ehto, a, b)</code></td><td><code>jos(a&gt;10, 5, 0)</code></td></tr>
+      <tr><td><code>min / max / med / mean / sum(...)</code></td><td><code>min(a, b, c)</code></td></tr>
+      <tr><td><code>kaikki(lauseke)</code></td><td><code>min(kaikki(a))</code> — pienin arvo kaikista saman sarjan vartioista</td></tr>
+      <tr><td><code>floor / ceil / abs / sqrt(x)</code></td><td><code>floor(a)</code></td></tr>
+      <tr><td><code>pyorista(x, n=0)</code></td><td><code>pyorista(a, 1)</code></td></tr>
+    </table>
+    <p>Esim. 10p jaettuna sarjan nopeimman ja hitaimman ajan välillä:<br>
+    <code>interpoloi(aikavali(alku,loppu), min(kaikki(aikavali(alku,loppu))), 10, max(kaikki(aikavali(alku,loppu))))</code></p>
+  `;
+}
+
+function paivitaUusiTyyppi() {
+  const kaava = document.getElementById("uusi-tyyppi").value === "kaava";
+  document.getElementById("uusi-kaava-editor").style.display = kaava ? "flex" : "none";
+  if (kaava) document.getElementById("uusi-kaava-ohje").innerHTML = kaavaOhjeHTML();
+  document.getElementById("uusi-kaava-vinkki").style.display = kaava ? "block" : "none";
+  document.getElementById("uusi-max").style.display = kaava ? "none" : "inline-block";
+}
+
 async function lataaTehtavat() {
   const [tRes, rRes] = await Promise.all([fetch(`/api/tehtavat?rasti_id=${rastiId}`), fetch("/api/rastit")]);
   tehtavat = await tRes.json();
@@ -79,8 +127,12 @@ async function lataaTehtavat() {
   renderLista();
 }
 
-function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto'}[t]||t; }
+function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto',kaava:'Kaava'}[t]||t; }
 function tyyppiClass(t) { return 'tehtava-tyyppi-badge tyyppi-'+t; }
+function tyyppiValinnat(valittu) {
+  return ['pisteet','oikein_vaarin','ajanotto','kaava'].map(t =>
+    `<option value="${t}" ${t===valittu?'selected':''}>${tyyppiLabel(t)}</option>`).join('');
+}
 
 function renderLista() {
   const lista = document.getElementById("tehtava-lista");
@@ -96,6 +148,7 @@ function renderLista() {
         <span class="tehtava-nimi">${t.nimi}</span>
         <span class="${tyyppiClass(t.tyyppi)}">${tyyppiLabel(t.tyyppi)}</span>
         ${t.max_pisteet !== null ? `<span style="font-size:.8rem;color:var(--muted)">max ${t.max_pisteet} p</span>` : ''}
+        ${t.tyyppi==='kaava' ? `<button class="btn btn-ghost btn-xs" onclick="avaaSyoteEditori('tehtava',${t.id})">Syötteet (${t.syotteet.length})</button>` : ''}
         <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus('tehtava',${t.id},${i})">Muokkaa</button>
         <button class="btn btn-danger btn-xs" onclick="poistaTehtava(${t.id})">Poista</button>
       </div>
@@ -110,6 +163,7 @@ function renderLista() {
           <span class="tehtava-nimi">${o.nimi}</span>
           <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
           ${o.max_pisteet !== null ? `<span style="font-size:.8rem;color:var(--muted)">max ${o.max_pisteet} p</span>` : ''}
+          ${o.tyyppi==='kaava' ? `<button class="btn btn-ghost btn-xs" onclick="avaaSyoteEditori('osatehtava',${o.id})">Syötteet (${o.syotteet.length})</button>` : ''}
           <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus('osatehtava',${o.id},${i},${oi})">Muokkaa</button>
           <button class="btn btn-danger btn-xs" onclick="poistaOsatehtava(${o.id})">Poista</button>
         </div>
@@ -124,6 +178,15 @@ function renderLista() {
   });
 }
 
+function haeKohde(kohde, id) {
+  if (kohde === 'tehtava') return tehtavat.find(t => t.id === id);
+  for (const t of tehtavat) {
+    const o = t.osatehtavat.find(o => o.id === id);
+    if (o) return o;
+  }
+  return null;
+}
+
 function avaMuokkaus(kohde, id, idx, osaIdx) {
   document.querySelectorAll(".edit-row.inline").forEach(el => el.remove());
   const t = kohde === 'tehtava' ? tehtavat[idx] : tehtavat[idx].osatehtavat[osaIdx];
@@ -134,19 +197,31 @@ function avaMuokkaus(kohde, id, idx, osaIdx) {
 
   const row = document.createElement("div");
   row.className = "edit-row inline";
+  row.style.flexDirection = "column";
+  row.style.alignItems = "stretch";
   row.innerHTML = `
-    <input type="text" id="m-nimi-${id}" value="${t.nimi}" placeholder="Nimi">
-    <select id="m-tyyppi-${id}" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
-      <option value="pisteet" ${t.tyyppi==='pisteet'?'selected':''}>Pisteet</option>
-      <option value="oikein_vaarin" ${t.tyyppi==='oikein_vaarin'?'selected':''}>Oikein/Väärin</option>
-      <option value="ajanotto" ${t.tyyppi==='ajanotto'?'selected':''}>Ajanotto</option>
-    </select>
-    <input type="number" id="m-max-${id}" value="${t.max_pisteet ?? ''}" placeholder="Max p" min="0" step="0.5">
-    <button class="btn btn-success btn-xs" onclick="tallennaMuokkaus('${kohde}',${id},${idx}${osaIdx!==undefined?','+osaIdx:''})">Tallenna</button>
-    <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <input type="text" id="m-nimi-${id}" value="${t.nimi}" placeholder="Nimi">
+      <select id="m-tyyppi-${id}" onchange="paivitaMuokkausTyyppi(${id})" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
+        ${tyyppiValinnat(t.tyyppi)}
+      </select>
+      <input type="number" id="m-max-${id}" value="${t.max_pisteet ?? ''}" placeholder="Max p" min="0" step="0.5" style="display:${t.tyyppi==='kaava'?'none':'inline-block'}">
+      <button class="btn btn-success btn-xs" onclick="tallennaMuokkaus('${kohde}',${id},${idx}${osaIdx!==undefined?','+osaIdx:''})">Tallenna</button>
+      <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+    </div>
+    <div id="m-kaava-editor-${id}" class="kaava-editor" style="display:${t.tyyppi==='kaava'?'flex':'none'}">
+      <textarea id="m-kaava-${id}" class="kaava-textarea" placeholder="Kaava">${t.kaava || ''}</textarea>
+      <div class="kaava-ohje">${kaavaOhjeHTML()}</div>
+    </div>
   `;
   const parentEl = targetItem.closest(".tehtava-item, .osatehtava-item");
   if (parentEl) parentEl.parentElement.insertAdjacentElement("afterend", row);
+}
+
+function paivitaMuokkausTyyppi(id) {
+  const kaava = document.getElementById(`m-tyyppi-${id}`).value === "kaava";
+  document.getElementById(`m-kaava-editor-${id}`).style.display = kaava ? "flex" : "none";
+  document.getElementById(`m-max-${id}`).style.display = kaava ? "none" : "inline-block";
 }
 
 async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
@@ -154,11 +229,12 @@ async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
   const tyyppi = document.getElementById(`m-tyyppi-${id}`).value;
   const maxVal = document.getElementById(`m-max-${id}`).value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  const kaava = tyyppi === 'kaava' ? document.getElementById(`m-kaava-${id}`).value.trim() : null;
   if (!nimi) return;
 
   const body = kohde === 'tehtava'
-    ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet }
-    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet };
+    ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet, kaava }
+    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet, kaava };
   const url = kohde === 'tehtava' ? `/api/tehtava/${id}` : `/api/osatehtava/${id}`;
   await fetch(url, { method:"PUT", headers:adminHeaders(), body:JSON.stringify(body) });
   await lataaTehtavat();
@@ -173,18 +249,30 @@ function avaaLisaaOsa(tehtavaId) {
   const row = document.createElement("div");
   row.className = "edit-row inline";
   row.style.marginLeft = "24px";
+  row.style.flexDirection = "column";
+  row.style.alignItems = "stretch";
   row.innerHTML = `
-    <input type="text" id="osa-nimi-${tehtavaId}" placeholder="Osatehtävän nimi">
-    <select id="osa-tyyppi-${tehtavaId}" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
-      <option value="pisteet">Pisteet</option>
-      <option value="oikein_vaarin">Oikein/Väärin</option>
-      <option value="ajanotto">Ajanotto</option>
-    </select>
-    <input type="number" id="osa-max-${tehtavaId}" placeholder="Max p" min="0" step="0.5">
-    <button class="btn btn-success btn-xs" onclick="lisaaOsatehtava(${tehtavaId})">Lisää</button>
-    <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <input type="text" id="osa-nimi-${tehtavaId}" placeholder="Osatehtävän nimi">
+      <select id="osa-tyyppi-${tehtavaId}" onchange="paivitaOsaTyyppi(${tehtavaId})" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:6px">
+        ${tyyppiValinnat('pisteet')}
+      </select>
+      <input type="number" id="osa-max-${tehtavaId}" placeholder="Max p" min="0" step="0.5">
+      <button class="btn btn-success btn-xs" onclick="lisaaOsatehtava(${tehtavaId})">Lisää</button>
+      <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
+    </div>
+    <div id="osa-kaava-editor-${tehtavaId}" class="kaava-editor" style="display:none">
+      <textarea id="osa-kaava-${tehtavaId}" class="kaava-textarea" placeholder="Kaava"></textarea>
+      <div class="kaava-ohje">${kaavaOhjeHTML()}</div>
+    </div>
   `;
   btns[idx].insertAdjacentElement("beforebegin", row);
+}
+
+function paivitaOsaTyyppi(tehtavaId) {
+  const kaava = document.getElementById(`osa-tyyppi-${tehtavaId}`).value === "kaava";
+  document.getElementById(`osa-kaava-editor-${tehtavaId}`).style.display = kaava ? "flex" : "none";
+  document.getElementById(`osa-max-${tehtavaId}`).style.display = kaava ? "none" : "inline-block";
 }
 
 async function lisaaOsatehtava(tehtavaId) {
@@ -192,8 +280,9 @@ async function lisaaOsatehtava(tehtavaId) {
   const tyyppi = document.getElementById(`osa-tyyppi-${tehtavaId}`).value;
   const maxVal = document.getElementById(`osa-max-${tehtavaId}`).value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  const kaava = tyyppi === 'kaava' ? document.getElementById(`osa-kaava-${tehtavaId}`).value.trim() : null;
   if (!nimi) return;
-  await fetch("/api/osatehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({tehtava_id:tehtavaId,nimi,tyyppi,max_pisteet}) });
+  await fetch("/api/osatehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({tehtava_id:tehtavaId,nimi,tyyppi,max_pisteet,kaava}) });
   await lataaTehtavat();
 }
 
@@ -202,12 +291,13 @@ async function lisaaTehtava() {
   const tyyppi = document.getElementById("uusi-tyyppi").value;
   const maxVal = document.getElementById("uusi-max").value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
+  const kaava = tyyppi === 'kaava' ? document.getElementById("uusi-kaava").value.trim() : null;
   const virhe = document.getElementById("virhe");
   virhe.style.display = "none";
   if (!nimi) { virhe.textContent="Syötä tehtävän nimi."; virhe.style.display="flex"; return; }
-  const res = await fetch("/api/tehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({rasti_id:rastiId,nimi,tyyppi,max_pisteet}) });
+  const res = await fetch("/api/tehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({rasti_id:rastiId,nimi,tyyppi,max_pisteet,kaava}) });
   if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
-  document.getElementById("uusi-nimi").value=""; document.getElementById("uusi-max").value="";
+  document.getElementById("uusi-nimi").value=""; document.getElementById("uusi-max").value=""; document.getElementById("uusi-kaava").value="";
   await lataaTehtavat();
 }
 
@@ -223,7 +313,105 @@ async function poistaOsatehtava(id) {
   await lataaTehtavat();
 }
 
-document.addEventListener("keydown", e => { if (e.key==="Enter") lisaaTehtava(); });
+// ── Kaava-tyypin syöte-editori ──────────────────────────────────────────────
+
+function avaaSyoteEditori(kohde, id) {
+  const olemassaOleva = document.getElementById("syote-editori");
+  if (olemassaOleva) olemassaOleva.remove();
+  document.querySelectorAll(".edit-row.inline").forEach(el => el.remove());
+
+  const t = haeKohde(kohde, id);
+  if (!t) return;
+  const btnSelector = kohde === 'tehtava'
+    ? `[onclick*="avaaSyoteEditori('tehtava',${id})"]`
+    : `[onclick*="avaaSyoteEditori('osatehtava',${id})"]`;
+  const btn = document.querySelector(btnSelector);
+  if (!btn) return;
+  const item = btn.closest(".tehtava-item, .osatehtava-item");
+
+  const panel = document.createElement("div");
+  panel.id = "syote-editori";
+  panel.className = "syote-osio";
+  panel.dataset.kohde = kohde;
+  panel.dataset.id = id;
+  renderSyoteEditori(panel, t);
+  item.insertAdjacentElement("afterend", panel);
+}
+
+function renderSyoteEditori(panel, t) {
+  const kohde = panel.dataset.kohde, id = panel.dataset.id;
+  let html = `<div style="font-weight:700;font-size:.85rem;margin-bottom:6px">Syötteet — ${t.nimi}</div>`;
+  t.syotteet.forEach(s => {
+    html += `
+      <div class="syote-rivi">
+        <b>${s.nimi}</b>
+        <span style="color:var(--muted)">${s.kuvaus || ''}</span>
+        <span class="${tyyppiClass(s.tyyppi==='aika'?'ajanotto':'pisteet')}">${s.tyyppi==='aika'?'Aika':'Piste'}</span>
+        <button class="btn btn-danger btn-xs" onclick="poistaSyoteMaarite(${s.id})">✕</button>
+      </div>`;
+  });
+  html += `
+    <div class="syote-rivi">
+      <input type="text" id="uusi-syote-nimi" placeholder="nimi (esim. alku)" style="width:110px">
+      <input type="text" id="uusi-syote-kuvaus" placeholder="kuvaus (valinnainen)" style="width:150px">
+      <select id="uusi-syote-tyyppi"><option value="piste">Piste</option><option value="aika">Aika</option></select>
+      <button class="btn btn-success btn-xs" onclick="lisaaSyoteMaarite()">+ Lisää syöte</button>
+    </div>
+    <div class="syote-rivi" style="margin-top:8px">
+      <button class="btn btn-ghost btn-xs" onclick="testaaKaavaEsikatselu()">Testaa kaava (kaikki syötteet = 1)</button>
+      <span id="kaava-tulos" class="kaava-tulos"></span>
+    </div>
+    <button class="btn btn-ghost btn-xs" style="margin-top:6px" onclick="document.getElementById('syote-editori').remove()">Sulje</button>
+  `;
+  panel.innerHTML = html;
+}
+
+async function paivitaSyoteEditori() {
+  const panel = document.getElementById("syote-editori");
+  if (!panel) return;
+  const kohde = panel.dataset.kohde, id = parseInt(panel.dataset.id);
+  await lataaTehtavat();
+  const t = haeKohde(kohde, id);
+  const uusiPanel = document.getElementById("syote-editori");
+  if (t && uusiPanel) renderSyoteEditori(uusiPanel, t);
+}
+
+async function lisaaSyoteMaarite() {
+  const panel = document.getElementById("syote-editori");
+  const kohde = panel.dataset.kohde, id = panel.dataset.id;
+  const nimi = document.getElementById("uusi-syote-nimi").value.trim();
+  const kuvaus = document.getElementById("uusi-syote-kuvaus").value.trim();
+  const tyyppi = document.getElementById("uusi-syote-tyyppi").value;
+  if (!nimi) return;
+  const url = kohde === 'tehtava' ? `/api/tehtava/${id}/syote` : `/api/osatehtava/${id}/syote`;
+  const res = await fetch(url, { method:"POST", headers:adminHeaders(), body:JSON.stringify({nimi,kuvaus,tyyppi}) });
+  if (!res.ok) { const e = await res.json(); alert(e.detail); return; }
+  await paivitaSyoteEditori();
+}
+
+async function poistaSyoteMaarite(syoteId) {
+  if (!confirm("Poistetaanko syöte? Kaikki sille syötetyt arvot häviävät.")) return;
+  await fetch(`/api/syote/${syoteId}`, { method:"DELETE", headers:adminHeaders() });
+  await paivitaSyoteEditori();
+}
+
+async function testaaKaavaEsikatselu() {
+  const panel = document.getElementById("syote-editori");
+  const kohde = panel.dataset.kohde, id = parseInt(panel.dataset.id);
+  const t = haeKohde(kohde, id);
+  const tulosEl = document.getElementById("kaava-tulos");
+  if (!t.kaava) { tulosEl.textContent = "Kaavaa ei ole asetettu."; return; }
+  const muuttujat = {};
+  t.syotteet.forEach(s => { muuttujat[s.nimi] = 1; });
+  const res = await fetch("/api/kaava/testaa", { method:"POST", headers:adminHeaders(), body:JSON.stringify({kaava:t.kaava, muuttujat}) });
+  const data = await res.json();
+  tulosEl.textContent = data.ok ? `Tulos (kaikki=1): ${data.tulos}` : `Virhe: ${data.virhe}`;
+  tulosEl.style.color = data.ok ? "var(--success, #166534)" : "var(--danger, #b91c1c)";
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key==="Enter" && (e.target.id==="uusi-nimi" || e.target.id==="uusi-max")) lisaaTehtava();
+});
 lataaTehtavat();
 </script>
 </body>
