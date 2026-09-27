@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Käyttöohje rastihenkilölle</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .ohje h2 { font-size:1.05rem; margin:0 0 10px; color:var(--primary); }
+    .ohje h3 { font-size:.9rem; margin:14px 0 6px; }
+    .ohje p, .ohje li { font-size:.92rem; line-height:1.55; }
+    .ohje ol, .ohje ul { padding-left:20px; margin:0 0 8px; }
+    .ohje li { margin-bottom:5px; }
+    .ohje .vinkki { background:#eef2ff; border-left:4px solid var(--primary); border-radius:6px; padding:8px 12px; font-size:.88rem; margin:10px 0; }
+    .ohje .huom { background:#fffbeb; border-left:4px solid #f59e0b; border-radius:6px; padding:8px 12px; font-size:.88rem; margin:10px 0; }
+    .ohje .nappi { display:inline-block; border:1.5px solid var(--border); border-radius:5px; padding:0 6px; font-size:.85em; font-weight:600; background:#fff; white-space:nowrap; }
+    .sisallys a { display:block; padding:4px 0; font-size:.92rem; }
+    .ohje table { width:100%; border-collapse:collapse; font-size:.88rem; margin:6px 0 10px; }
+    .ohje td { padding:5px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+    .ohje td:first-child { white-space:nowrap; font-weight:600; }
+    @media print {
+      .header, .ala-linkit { display:none; }
+      .card { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Käyttöohje</span>
+    <span class="header-sub">Rastihenkilölle</span>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-white btn-sm" onclick="history.length > 1 ? history.back() : location.href='/'">← Takaisin</button>
+  </div>
+</div>
+
+<div class="container ohje">
+
+  <div class="card" style="margin-top:24px">
+    <h2>Sisällys</h2>
+    <div class="sisallys">
+      <a href="#kirjautuminen">1. Kirjautuminen ja rastin valinta</a>
+      <a href="#saapuu">2. Vartio saapuu rastille</a>
+      <a href="#jono">3. Jono — kun rasti on varattu</a>
+      <a href="#ajastin">4. Ajastin</a>
+      <a href="#lahtee">5. Vartio lähtee rastilta</a>
+      <a href="#pisteet">6. Pisteiden merkitseminen</a>
+      <a href="#tilanne">7. Tilanne — ketä on tulossa</a>
+      <a href="#ongelmat">8. Ongelmatilanteet</a>
+    </div>
+    <div class="vinkki">Useimpien sivujen oikean yläkulman <span class="nappi">?</span>-painikkeesta saat lyhyen ohjeen juuri siihen sivuun.</div>
+  </div>
+
+  <div class="card" id="kirjautuminen">
+    <h2>1. Kirjautuminen ja rastin valinta</h2>
+    <h3>Ensimmäinen kerta</h3>
+    <ol>
+      <li>Avaa kisan osoite puhelimen selaimella.</li>
+      <li>Kirjoita nimesi (etunimi sukunimi) ja paina <span class="nappi">Jatka →</span>.</li>
+      <li>Valitse itsellesi salasana, kirjoita se kahteen kertaan ja paina <span class="nappi">Aseta salasana →</span>.</li>
+    </ol>
+    <p>Jos nimeäsi ei löydy, avaa kohta <strong>Ei tunnusta? Pyydä käyttäjätunnusta</strong> ja lähetä pyyntö. Kisatoimisto luo sinulle tunnuksen.</p>
+    <h3>Seuraavilla kerroilla</h3>
+    <p>Kirjoita nimesi, paina <span class="nappi">Jatka →</span>, syötä salasanasi ja paina <span class="nappi">Kirjaudu →</span>. Puhelin muistaa kirjautumisen ja valitun rastin: kun avaat leimaussivun kirjanmerkistä tai aloitusnäytöltä, pääset suoraan rastillesi.</p>
+    <h3>Rastin valinta</h3>
+    <ul>
+      <li>Valitse listasta rasti, jolla olet tänään.</li>
+      <li>Haalea rasti tarkoittaa, ettei sinulla ole siihen oikeutta. Paina sitä, niin voit pyytää oikeutta kisatoimistolta.</li>
+      <li>Rastia voi vaihtaa myöhemmin leimaussivun yläkulmasta: <span class="nappi">Vaihda rastia</span>.</li>
+    </ul>
+    <div class="vinkki">Kun olet valinnut rastin, lisää leimaussivu puhelimen aloitusnäytölle (selaimen valikko → <em>Lisää aloitusnäytölle</em>), niin pääset rastillesi yhdellä napautuksella.</div>
+  </div>
+
+  <div class="card" id="saapuu">
+    <h2>2. Vartio saapuu rastille</h2>
+    <p>Leimaa vartio sisään heti, kun se aloittaa rastin. Kohta <strong>Leimaa sisään</strong> on leimaussivun alaosassa.</p>
+    <h3>QR-koodilla (nopein)</h3>
+    <ol>
+      <li>Paina <span class="nappi">📷 QR-koodi</span>. Salli kameran käyttö, jos puhelin kysyy.</li>
+      <li>Näytä kameralle vartion QR-koodi. Vartion nimi täyttyy automaattisesti.</li>
+      <li>Paina <span class="nappi">Tallenna leimaus</span>.</li>
+    </ol>
+    <h3>Käsin</h3>
+    <ol>
+      <li>Paina <span class="nappi">✏️ Manuaalinen</span>.</li>
+      <li>Ala kirjoittaa vartion nimeä ja valitse vartio ehdotuslistasta.</li>
+      <li>Paina <span class="nappi">Tallenna leimaus</span>.</li>
+    </ol>
+    <p>Vartio ilmestyy kohtaan <strong>Rastilla nyt</strong>.</p>
+    <div class="huom"><strong>Uudelleen käynti:</strong> jos vartio on jo käynyt rastillasi, sovellus kysyy vahvistuksen. Hyväksy vain, jos vartio todella tekee rastin uudelleen.</div>
+  </div>
+
+  <div class="card" id="jono">
+    <h2>3. Jono — kun rasti on varattu</h2>
+    <ul>
+      <li>Jos vartio joutuu odottamaan, valitse vartio kuten sisäänleimauksessa ja paina <span class="nappi">Lisää jonoon</span>.</li>
+      <li>Jonossa olevat vartiot näkyvät kohdassa <strong>Jonossa</strong> tulojärjestyksessä.</li>
+      <li>Kun vartio pääsee rastille, paina sen kohdalla <span class="nappi">Rastille</span>. Vartio leimautuu sisään samalla.</li>
+      <li><span class="nappi">✕</span> poistaa vartion jonosta, esim. jos se ei jäänytkään odottamaan.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="ajastin">
+    <h2>4. Ajastin</h2>
+    <p>Jokaisella rastilla olevalla vartiolla on oma ajastin kohdassa <strong>Rastilla nyt</strong>. Käytä sitä, jos rastin tehtävässä mitataan aikaa.</p>
+    <table>
+      <tr><td>▶</td><td>Käynnistää ajastimen ja kirjaa <strong>aloitusajan</strong>, esim. lähtömerkin hetkellä.</td></tr>
+      <tr><td>⏹</td><td>Pysäyttää ajastimen ja kirjaa <strong>lopetusajan</strong>, esim. kun vartio tulee maaliin.</td></tr>
+      <tr><td>↺</td><td>Nollaa ajastimen (kysyy vahvistuksen). Käytä vain, jos ajastin käynnistettiin vahingossa.</td></tr>
+    </table>
+    <p>Vartion kohdalla näkyy esim. <code>15:44:10 → 15:52:30 (08:20)</code> eli aloitus, lopetus ja kesto.</p>
+    <ul>
+      <li>Ajat tallentuvat palvelimelle, joten ne näkyvät kaikilla rastin puhelimilla ja siirtyvät automaattisesti pisteiden merkintään.</li>
+      <li>Jos unohdat pysäyttää ajastimen, <span class="nappi">Ulos</span>-leimaus pysäyttää sen. Lopetusajaksi tulee silloin ulosleimauksen hetki.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="lahtee">
+    <h2>5. Vartio lähtee rastilta</h2>
+    <p>Paina vartion kohdalla <span class="nappi">Ulos</span> kohdassa <strong>Rastilla nyt</strong>.</p>
+    <p>Jos rastillasi merkitään pisteitä, vartio siirtyy korttiin <strong>Merkitse pisteet</strong> sivun yläosaan.</p>
+  </div>
+
+  <div class="card" id="pisteet">
+    <h2>6. Pisteiden merkitseminen</h2>
+    <ol>
+      <li>Paina kortissa <strong>Merkitse pisteet</strong> vartion kohdalla <span class="nappi">Merkitse →</span>.</li>
+      <li>Täytä jokainen tehtävä. Tehtävän nimen alla näkyvät <strong>arvostelukriteerit</strong>, eli miten kohta arvioidaan.</li>
+      <li>Kirjoita tarvittaessa kommentti, esim. poikkeamasta tai hylkäyksen syystä.</li>
+      <li>Paina <span class="nappi">Tallenna pisteet</span>. Palaat leimaussivulle.</li>
+    </ol>
+    <h3>Erilaiset kentät</h3>
+    <table>
+      <tr><td>Pistekenttä</td><td>Kirjoita pisteet. Sovellus ei hyväksy negatiivisia pisteitä eikä maksimin ylittäviä.</td></tr>
+      <tr><td>☐ Vaihtoehtolista</td><td>Valitse vaihtoehto, joka kuvaa suoritusta parhaiten. Sen pisteet kirjautuvat. Toinen painallus poistaa valinnan.</td></tr>
+      <tr><td>✓ Oikein / ✗ Väärin</td><td>Valitse jompikumpi.</td></tr>
+      <tr><td>Aika (min, sek)</td><td>Suoritusaika minuutteina ja sekunteina. Täyttyy ajastimesta valmiiksi.</td></tr>
+      <tr><td>Kellonaika (hh:mm:ss)</td><td>Alku- ja loppuaika. Täyttyvät ajastimesta valmiiksi. <span class="nappi">⏱</span> hakee ajat ajastimelta uudelleen.</td></tr>
+      <tr><td>Mittaus</td><td>Kirjoita mitattu arvo, esim. millimetreinä, kuten kriteereissä ohjeistetaan.</td></tr>
+      <tr><td>☐ Hylätty</td><td>Rastita, jos kohtaa ei voi arvioida, ja jätä sen mittaukset tyhjiksi. Kohta saa 0 pistettä.</td></tr>
+    </table>
+    <div class="vinkki"><strong>Pisteet lasketaan tulospalvelussa.</strong> Osa pisteistä, kuten ajat ja mittaukset, lasketaan vertaamalla vartiota muihin saman sarjan vartioihin. Siksi pistesivu ei aina näytä lopullista pistemäärää. Kirjaa vain mittaukset ja ajat tarkasti.</div>
+    <div class="huom">
+      <ul style="margin:0">
+        <li>Vartio pysyy <strong>Merkitse pisteet</strong> -listalla, kunnes jokainen kohta on täytetty. Jos vartio ei jostain syystä ole listalla, ilmoita kisatoimistoon.</li>
+        <li>Jos huomaat virheen tallennuksen jälkeen, ilmoita kisatoimistoon. Kisatoimisto voi korjata pisteet.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" id="tilanne">
+    <h2>7. Tilanne — ketä on tulossa</h2>
+    <ul>
+      <li><strong>Tilanne</strong>-välilehdellä näkyvät rastiisi liittyvät vartiot: 🟢 rastillasi, 🟠 tulossa ja ⚫ lähti juuri täältä.</li>
+      <li>Ylhäällä näkyy, montako vartiota on jo käynyt rastillasi.</li>
+      <li>Oranssi <strong>⚡ Tulossa pian</strong> -ilmoitus tulee, kun vartio on alle 5 minuutin päässä. Punainen aika tarkoittaa, että vartio on yli 10 minuuttia myöhässä.</li>
+      <li>Merkki 📊 tarkoittaa, että saapumisarvio perustuu muiden vartioiden todellisiin siirtymäaikoihin.</li>
+    </ul>
+    <p>Kaikki rastisi leimaukset näet sivun alaosan linkistä <strong>Katso kaikki leimaukset</strong>.</p>
+  </div>
+
+  <div class="card" id="ongelmat">
+    <h2>8. Ongelmatilanteet</h2>
+    <table>
+      <tr><td>Sivu näyttää vanhalta tai jumittaa</td><td>Päivitä sivu: vedä sivua alaspäin tai paina selaimen päivitä-painiketta. Sivu päivittyy muutenkin itsestään 10 sekunnin välein.</td></tr>
+      <tr><td>”Kirjaudu uudelleen”</td><td>Kirjaudu nimelläsi ja salasanallasi uudelleen. Mitään tallennettua ei häviä.</td></tr>
+      <tr><td>”… on jo rastilla …”</td><td>Vartio on leimattu toiselle rastille eikä sieltä ole leimattu ulos. Ilmoita kisatoimistoon.</td></tr>
+      <tr><td>Väärä vartio leimattiin sisään</td><td>Leimaa se ulos ja ilmoita kisatoimistoon.</td></tr>
+      <tr><td>QR-koodi ei lue</td><td>Käytä <span class="nappi">✏️ Manuaalinen</span>-leimausta.</td></tr>
+      <tr><td>Unohdit salasanan</td><td>Pyydä kisatoimistoa nollaamaan se. Seuraavalla kirjautumisella valitset uuden.</td></tr>
+      <tr><td>Verkkoyhteys katkeaa</td><td>Leimaukset ja pisteet eivät tallennu ilman verkkoa. Kirjaa vartiot, kellonajat ja pisteet paperille ja syötä ne, kun yhteys palaa, tai toimita paperi kisatoimistoon.</td></tr>
+    </table>
+    <div class="vinkki">Pidä puhelin ladattuna. Varavirtalähde on rastilla hyvä kaveri.</div>
+  </div>
+
+  <div class="link-group ala-linkit" style="margin-bottom:24px">
+    <a class="nav-link" href="#" onclick="window.print();return false">🖨️ Tulosta ohje</a>
+  </div>
+</div>
+</body>
+</html>

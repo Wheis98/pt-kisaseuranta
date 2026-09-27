@@ -41,6 +41,11 @@ app.include_router(admin.router)
 def root():
     return FileResponse(STATIC_DIR / "index.html")
 
+@app.get("/ohje.html")
+def ohje():
+    # Rastihenkilön käyttöohje
+    return FileResponse(STATIC_DIR / "ohje.html")
+
 @app.get("/style.css")
 def style():
     return FileResponse(STATIC_DIR / "style.css")
