@@ -1,20 +1,31 @@
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, TehtavaIn, OsatehtavaIn, SyoteMaariteIn, KaavaTestIn, STATIC_DIR
+from app import db, TehtavaIn, OsatehtavaIn, SyoteMaariteIn, KaavaTestIn, STATIC_DIR, seuraava_muuttuja
 from app.utils import vaadi_admin
 from app.kaava import evaluoi, KaavaVirhe
+import json
 
 router = APIRouter()
 
 TYYPIT = ("pisteet", "oikein_vaarin", "ajanotto", "kaava")
 
 
+def _vaihtoehdot_json(vaihtoehdot) -> str | None:
+    # Tallennetaan JSON-listana [{pisteet, kuvaus}]; tyhjä lista = ei vaihtoehtoja
+    return json.dumps([v.model_dump() for v in vaihtoehdot], ensure_ascii=False) if vaihtoehdot else None
+
+
+def _lue_vaihtoehdot(d: dict) -> dict:
+    d["vaihtoehdot"] = json.loads(d["vaihtoehdot"]) if d.get("vaihtoehdot") else []
+    return d
+
+
 def _hae_syotteet(taso, kohde_id):
     rows = db.execute(
-        "SELECT id, taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys FROM syotemaaritteet WHERE taso=? AND kohde_id=? ORDER BY jarjestys, id",
+        "SELECT id, taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot FROM syotemaaritteet WHERE taso=? AND kohde_id=? ORDER BY jarjestys, id",
         (taso, kohde_id)
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_lue_vaihtoehdot(dict(r)) for r in rows]
 
 
 @router.get("/tehtavat.html")
@@ -25,20 +36,20 @@ def tehtavat_page():
 def get_tehtavat(rasti_id: int):
     # Palauttaa rastin kaikki tehtävät osatehtavineen
     tehtavat_rows = db.execute(
-        "SELECT id, rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava FROM tehtavat WHERE rasti_id=? ORDER BY jarjestys, id",
+        "SELECT id, rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot FROM tehtavat WHERE rasti_id=? ORDER BY jarjestys, id",
         (rasti_id,)
     ).fetchall()
     result = []
     for t in tehtavat_rows:
-        d = dict(t)
+        d = _lue_vaihtoehdot(dict(t))
         d["syotteet"] = _hae_syotteet("tehtava", t["id"])
         osa_rows = db.execute(
-            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
+            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
             (t["id"],)
         ).fetchall()
         osatehtavat = []
         for o in osa_rows:
-            od = dict(o)
+            od = _lue_vaihtoehdot(dict(o))
             od["syotteet"] = _hae_syotteet("osatehtava", o["id"])
             osatehtavat.append(od)
         d["osatehtavat"] = osatehtavat
@@ -55,8 +66,8 @@ def create_tehtava(t: TehtavaIn, x_admin_token: str = Header(None)):
     if t.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM tehtavat WHERE rasti_id=?", (t.rasti_id,)).fetchone()[0]
-    db.execute("INSERT INTO tehtavat (rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava) VALUES (?,?,?,?,?,?)",
-               (t.rasti_id, t.nimi.strip(), t.tyyppi, t.max_pisteet, max_j + 1, t.kaava))
+    db.execute("INSERT INTO tehtavat (rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot) VALUES (?,?,?,?,?,?,?,?)",
+               (t.rasti_id, t.nimi.strip(), t.tyyppi, t.max_pisteet, max_j + 1, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot)))
     db.commit()
     return {"id": db.execute("SELECT last_insert_rowid()").fetchone()[0], "ok": True}
 
@@ -68,8 +79,8 @@ def update_tehtava(tehtava_id: int, t: TehtavaIn, x_admin_token: str = Header(No
         raise HTTPException(status_code=400, detail="Nimi vaaditaan")
     if t.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
-    db.execute("UPDATE tehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=? WHERE id=?",
-               (t.nimi.strip(), t.tyyppi, t.max_pisteet, t.kaava, tehtava_id))
+    db.execute("UPDATE tehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=? WHERE id=?",
+               (t.nimi.strip(), t.tyyppi, t.max_pisteet, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot), tehtava_id))
     db.commit()
     return {"ok": True}
 
@@ -99,8 +110,9 @@ def create_osatehtava(o: OsatehtavaIn, x_admin_token: str = Header(None)):
     if o.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM osatehtavat WHERE tehtava_id=?", (o.tehtava_id,)).fetchone()[0]
-    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava) VALUES (?,?,?,?,?,?)",
-               (o.tehtava_id, o.nimi.strip(), o.tyyppi, o.max_pisteet, max_j + 1, o.kaava))
+    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot) VALUES (?,?,?,?,?,?,?,?,?)",
+               (o.tehtava_id, o.nimi.strip(), o.tyyppi, o.max_pisteet, max_j + 1, o.kaava, seuraava_muuttuja(o.tehtava_id),
+                o.ohje, _vaihtoehdot_json(o.vaihtoehdot)))
     db.commit()
     return {"id": db.execute("SELECT last_insert_rowid()").fetchone()[0], "ok": True}
 
@@ -112,8 +124,8 @@ def update_osatehtava(osa_id: int, o: OsatehtavaIn, x_admin_token: str = Header(
         raise HTTPException(status_code=400, detail="Nimi vaaditaan")
     if o.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
-    db.execute("UPDATE osatehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=? WHERE id=?",
-               (o.nimi.strip(), o.tyyppi, o.max_pisteet, o.kaava, osa_id))
+    db.execute("UPDATE osatehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=? WHERE id=?",
+               (o.nimi.strip(), o.tyyppi, o.max_pisteet, o.kaava, o.ohje, _vaihtoehdot_json(o.vaihtoehdot), osa_id))
     db.commit()
     return {"ok": True}
 
@@ -147,8 +159,8 @@ def _lisaa_syote(taso, kohde_id, s, x_admin_token):
         raise HTTPException(status_code=400, detail="Virheellinen syötteen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM syotemaaritteet WHERE taso=? AND kohde_id=?", (taso, kohde_id)).fetchone()[0]
     try:
-        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys) VALUES (?,?,?,?,?,?)",
-                   (taso, kohde_id, s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, max_j + 1))
+        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot) VALUES (?,?,?,?,?,?,?)",
+                   (taso, kohde_id, s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, max_j + 1, _vaihtoehdot_json(s.vaihtoehdot)))
         db.commit()
     except Exception:
         raise HTTPException(status_code=400, detail="Syöte tällä nimellä on jo olemassa")
@@ -161,8 +173,8 @@ def paivita_syote(syote_id: int, s: SyoteMaariteIn, x_admin_token: str = Header(
         raise HTTPException(status_code=400, detail="Syötteen nimi vaaditaan")
     if s.tyyppi not in ("aika", "piste"):
         raise HTTPException(status_code=400, detail="Virheellinen syötteen tyyppi")
-    db.execute("UPDATE syotemaaritteet SET nimi=?, kuvaus=?, tyyppi=? WHERE id=?",
-               (s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, syote_id))
+    db.execute("UPDATE syotemaaritteet SET nimi=?, kuvaus=?, tyyppi=?, vaihtoehdot=? WHERE id=?",
+               (s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, _vaihtoehdot_json(s.vaihtoehdot), syote_id))
     db.commit()
     return {"ok": True}
 
@@ -177,10 +189,11 @@ def poista_syote(syote_id: int, x_admin_token: str = Header(None)):
 
 @router.post("/api/kaava/testaa")
 def testaa_kaava(data: KaavaTestIn, x_admin_token: str = Header(None)):
-    # Ajaa kaavan annetuilla esimerkkiarvoilla ilman kaikki()-vertailudataa — käytetään admin-UI:n esikatseluun
+    # Ajaa kaavan annetuilla esimerkkiarvoilla — käytetään admin-UI:n esikatseluun. Vertailudatana
+    # (kaikki() ja .a-joukot) on vain tämä yksi vartio, jotta min/max/med eivät kaadu tyhjään joukkoon.
     vaadi_admin(x_admin_token)
     try:
-        tulos = evaluoi(data.kaava, data.muuttujat, [])
+        tulos = evaluoi(data.kaava, data.muuttujat, [data.muuttujat])
         return {"ok": True, "tulos": tulos}
     except KaavaVirhe as e:
         return {"ok": False, "virhe": str(e)}

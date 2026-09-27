@@ -14,6 +14,16 @@ from app.internal import admin
 
 app = FastAPI()
 
+@app.middleware("http")
+async def ei_valimuistia_sivuille(request, call_next):
+    # Selain tarkistaa HTML-sivut ja tyylit palvelimelta joka kerta (ETag), jotta päivitetty sivu
+    # ei jää laitteille vanhana versiona välimuistiin
+    response = await call_next(request)
+    tyyppi = response.headers.get("content-type", "")
+    if tyyppi.startswith("text/html") or tyyppi.startswith("text/css"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 app.include_router(asetus.router)
 app.include_router(leimaus.router)
 app.include_router(login.router)

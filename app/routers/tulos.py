@@ -127,7 +127,7 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
             sarja = (vartion_sarja["sarja"] if vartion_sarja else "") or ""
             muuttujat = _kaavan_omat_arvot(t.suoritus_id, taso, kohde_id)
             try:
-                pisteet = round(float(evaluoi(kohde["kaava"], muuttujat, _kaavan_kaikki_muuttujat(sarja, taso, kohde_id))), 1)
+                pisteet = round(float(evaluoi(kohde["kaava"], muuttujat, _kaavan_kaikki_muuttujat(sarja, taso, kohde_id))), 2)
             except KaavaVirhe:
                 pisteet = None
     elif pisteet is not None:
@@ -240,9 +240,71 @@ def _laske_kaava_pisteet(rivi: dict, taso: str, kohde_id: int, suoritus_id: int,
     if key not in kaikki_cache:
         kaikki_cache[key] = _kaavan_kaikki_muuttujat(sarja, taso, kohde_id)
     try:
-        rivi["pisteet"] = round(float(evaluoi(kaava, muuttujat, kaikki_cache[key])), 1)
+        rivi["pisteet"] = round(float(evaluoi(kaava, muuttujat, kaikki_cache[key])), 2)
     except KaavaVirhe:
         rivi["pisteet"] = None
+
+def _hae_osat(suoritus_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki_cache: dict) -> list:
+    # Tehtävän osatehtävät tämän suorituksen tuloksineen, ajanotto-interpolointi ja kaavat laskettuina
+    rows = db.execute("""
+        SELECT o.id, o.nimi, o.tyyppi, o.max_pisteet, o.kaava, o.muuttuja,
+               ot.pisteet, ot.oikein, ot.aika_sekuntia
+        FROM osatehtavat o
+        LEFT JOIN osatehtava_tulokset ot ON ot.osatehtava_id=o.id AND ot.suoritus_id=?
+        WHERE o.tehtava_id=? ORDER BY o.jarjestys, o.id
+    """, (suoritus_id, tehtava_id)).fetchall()
+    osat = [dict(o) for o in rows]
+    for o in osat:
+        _interpoloi_pisteet(o, "o", sarja, rajat)
+        _laske_kaava_pisteet(o, "osatehtava", o["id"], suoritus_id, sarja, kaikki_cache)
+    return osat
+
+def _osan_pisteet(o: dict):
+    if o["tyyppi"] == "oikein_vaarin" and o["oikein"] is not None:
+        return (o["max_pisteet"] if o["max_pisteet"] is not None else 1) if o["oikein"] else 0
+    return o["pisteet"]
+
+def _osien_muuttujat(osat: list, suoritus_id: int) -> dict:
+    # Tehtävän kaavan muuttujat osatehtävistä: osatehtävän oma kirjain (a, b, c...) = pisteet ja a_aika = ajanoton
+    # aika sekunteina. Rinnakkaisnimet järjestyksen mukaan: o1, o2, ... ja o1_aika, ...
+    # Tuloksen puuttuessa muuttujaa ei ole (kaava jää laskematta).
+    m: dict = {}
+    for i, o in enumerate(osat, 1):
+        nimet = [f"o{i}"] + ([o["muuttuja"]] if o.get("muuttuja") else [])
+        p = _osan_pisteet(o)
+        for n in nimet:
+            if p is not None:
+                m[n] = p
+            if o["aika_sekuntia"] is not None:
+                m[f"{n}_aika"] = o["aika_sekuntia"]
+    return m
+
+def _osakaavan_kaikki(rasti_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki_cache: dict) -> list:
+    # Saman sarjan kaikkien vartioiden osatehtävämuuttujat tälle tehtävälle — kaikki()/.o1 -joukkoja varten
+    key = ("osat", tehtava_id, sarja)
+    if key not in kaikki_cache:
+        rows = db.execute("""
+            SELECT s.id FROM suoritukset s JOIN vartiot v ON v.nimi = s.vartio
+            WHERE s.rasti_id=? AND COALESCE(v.sarja,'')=?
+        """, (rasti_id, sarja)).fetchall()
+        kaikki = [_osien_muuttujat(_hae_osat(r["id"], tehtava_id, sarja, rajat, kaikki_cache), r["id"]) for r in rows]
+        kaikki_cache[key] = [m for m in kaikki if m]
+    return kaikki_cache[key]
+
+def _laske_osakaava(td: dict, rasti_id: int, suoritus_id: int, sarja: str, rajat: dict, kaikki_cache: dict) -> None:
+    # Kaava-tyyppisen tehtävän, jolla on osatehtäviä, pisteet lasketaan tehtävän kaavasta osatehtävien tuloksilla
+    kaava = td.pop("kaava", None)
+    td["osakaava"] = True
+    td["pisteet"] = None
+    if not kaava:
+        return
+    muuttujat = _osien_muuttujat(td["osatehtavat"], suoritus_id)
+    if not muuttujat:
+        return
+    try:
+        td["pisteet"] = round(float(evaluoi(kaava, muuttujat, _osakaavan_kaikki(rasti_id, td["id"], sarja, rajat, kaikki_cache))), 2)
+    except KaavaVirhe:
+        pass
 
 def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
     vrow = db.execute("SELECT sarja, numero FROM vartiot WHERE nimi=?", (vartio,)).fetchone()
@@ -262,20 +324,13 @@ def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
         """, (s["id"], s["rasti_id"])).fetchall()
         tehtavat_data = []
         for t in tt:
-            osa_rows = db.execute("""
-                SELECT o.id, o.nimi, o.tyyppi, o.max_pisteet, o.kaava,
-                       ot.pisteet, ot.oikein, ot.aika_sekuntia
-                FROM osatehtavat o
-                LEFT JOIN osatehtava_tulokset ot ON ot.osatehtava_id=o.id AND ot.suoritus_id=?
-                WHERE o.tehtava_id=? ORDER BY o.jarjestys, o.id
-            """, (s["id"], t["id"])).fetchall()
             td = dict(t)
-            _interpoloi_pisteet(td, "t", sarja, rajat)
-            _laske_kaava_pisteet(td, "tehtava", t["id"], s["id"], sarja, kaikki_cache)
-            td["osatehtavat"] = [dict(o) for o in osa_rows]
-            for o in td["osatehtavat"]:
-                _interpoloi_pisteet(o, "o", sarja, rajat)
-                _laske_kaava_pisteet(o, "osatehtava", o["id"], s["id"], sarja, kaikki_cache)
+            td["osatehtavat"] = _hae_osat(s["id"], t["id"], sarja, rajat, kaikki_cache)
+            if td["osatehtavat"] and td["tyyppi"] == "kaava":
+                _laske_osakaava(td, s["rasti_id"], s["id"], sarja, rajat, kaikki_cache)
+            else:
+                _interpoloi_pisteet(td, "t", sarja, rajat)
+                _laske_kaava_pisteet(td, "tehtava", t["id"], s["id"], sarja, kaikki_cache)
             tehtavat_data.append(td)
         rasti_data.append({
             "suoritus_id": s["id"],

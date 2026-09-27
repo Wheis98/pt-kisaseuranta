@@ -177,6 +177,15 @@ CREATE TABLE IF NOT EXISTS syote_arvot (
   paivitetty TEXT NOT NULL,
   UNIQUE(suoritus_id, syotemaarite_id)
 );
+CREATE TABLE IF NOT EXISTS ajastimet (
+  id INTEGER PRIMARY KEY,
+  numero TEXT NOT NULL,
+  vartio TEXT NOT NULL,
+  alku TEXT NOT NULL,   -- palvelimen kellonaika ISO-muodossa (YYYY-MM-DDTHH:MM:SS)
+  loppu TEXT,           -- NULL = ajastin käynnissä
+  kayttaja TEXT NOT NULL DEFAULT '',
+  UNIQUE(numero, vartio)
+);
 CREATE TABLE IF NOT EXISTS sarjat (
   id INTEGER PRIMARY KEY,
   nimi TEXT NOT NULL UNIQUE
@@ -303,6 +312,47 @@ def _salli_kaava_tyyppi(taulu):
 for _taulu in ("tehtavat", "osatehtavat"):
     _salli_kaava_tyyppi(_taulu)
 
+
+# Osatehtävän muuttujanimi tehtävän kaavaa varten: a, b, ..., z, aa, ab, ...
+def muuttujan_nimi(i: int) -> str:
+    s, i = "", i + 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        s = chr(97 + r) + s
+    return s
+
+def muuttujan_indeksi(s: str) -> int:
+    i = 0
+    for c in s:
+        i = i * 26 + (ord(c) - 96)
+    return i - 1
+
+def seuraava_muuttuja(tehtava_id: int) -> str:
+    # Seuraava kirjain suurimman käytössä olevan jälkeen. Välistä poistetun osatehtävän kirjainta ei anneta
+    # uudelleen (muiden kirjaimet eivät muutu); viimeisen poistaminen vapauttaa sen kirjaimen seuraavalle.
+    kaytetyt = [r["muuttuja"] for r in db.execute("SELECT muuttuja FROM osatehtavat WHERE tehtava_id=? AND muuttuja IS NOT NULL", (tehtava_id,))]
+    return muuttujan_nimi(max((muuttujan_indeksi(m) for m in kaytetyt), default=-1) + 1)
+
+# Migraatio: osatehtävän muuttujanimi (a, b, c...) tehtävän kaavaa varten — annetaan vanhoille järjestyksessä
+try:
+    db.execute("ALTER TABLE osatehtavat ADD COLUMN muuttuja TEXT")
+    db.commit()
+except Exception:
+    pass
+for _r in db.execute("SELECT id, tehtava_id FROM osatehtavat WHERE muuttuja IS NULL ORDER BY tehtava_id, jarjestys, id").fetchall():
+    db.execute("UPDATE osatehtavat SET muuttuja=? WHERE id=?", (seuraava_muuttuja(_r["tehtava_id"]), _r["id"]))
+db.commit()
+
+# Migraatio: arvostelukriteerit (ohje) ja valittavat vaihtoehdot (JSON-lista {pisteet, kuvaus}) tehtäville,
+# osatehtäville ja kaavan syötteille. Vaihtoehdot näytetään pistesivulla valintoina numerokentän sijaan.
+for _taulu, _sarake in (("tehtavat", "ohje"), ("tehtavat", "vaihtoehdot"), ("osatehtavat", "ohje"),
+                        ("osatehtavat", "vaihtoehdot"), ("syotemaaritteet", "vaihtoehdot")):
+    try:
+        db.execute(f"ALTER TABLE {_taulu} ADD COLUMN {_sarake} TEXT")
+        db.commit()
+    except Exception:
+        pass
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -355,6 +405,17 @@ class LeimausIn(BaseModel):
     uudelleen: bool = False  # True = toinen käynti samalla rastilla hyväksytty
 
 
+class AjastinIn(BaseModel):
+    token: str
+    rastinumero: str
+    vartio: str
+
+
+class Vaihtoehto(BaseModel):
+    pisteet: float
+    kuvaus: str = ""
+
+
 class TehtavaIn(BaseModel):
     rasti_id: int
     nimi: str
@@ -362,6 +423,8 @@ class TehtavaIn(BaseModel):
     max_pisteet: float | None = None
     jarjestys: int = 0
     kaava: str | None = None
+    ohje: str | None = None                          # arvostelukriteerit, näkyy pistesivulla
+    vaihtoehdot: list[Vaihtoehto] | None = None      # pisteet-tyypin valittavat vaihtoehdot
 
 
 class OsatehtavaIn(BaseModel):
@@ -371,12 +434,15 @@ class OsatehtavaIn(BaseModel):
     max_pisteet: float | None = None
     jarjestys: int = 0
     kaava: str | None = None
+    ohje: str | None = None
+    vaihtoehdot: list[Vaihtoehto] | None = None
 
 
 class SyoteMaariteIn(BaseModel):
     nimi: str
     kuvaus: str = ""
     tyyppi: str  # 'aika' | 'piste'
+    vaihtoehdot: list[Vaihtoehto] | None = None  # piste-syötteen valittavat vaihtoehdot
 
 
 class KaavaTestIn(BaseModel):

@@ -30,6 +30,12 @@
     .osa-nimi { font-weight:600; flex:1; }
     .parent-total { font-size:.82rem; color:var(--muted); margin-top:8px; padding-top:6px; border-top:1px solid var(--border); text-align:right; }
     textarea { width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:.9rem; resize:vertical; font-family:inherit; }
+    .kriteerit { font-size:.8rem; color:var(--muted); white-space:pre-wrap; background:#f8fafc; border-radius:6px; padding:6px 9px; margin:-4px 0 8px; line-height:1.45; }
+    .vaihtoehdot { display:flex; flex-direction:column; gap:5px; width:100%; }
+    .vaihtoehto { display:flex; align-items:flex-start; gap:9px; text-align:left; padding:8px 10px; border:2px solid var(--border); border-radius:8px; background:white; cursor:pointer; font-size:.85rem; line-height:1.35; transition:all .12s; }
+    .vaihtoehto .vo-ruutu { font-size:1.05rem; line-height:1; flex-shrink:0; }
+    .vaihtoehto .vo-p { font-weight:700; min-width:44px; flex-shrink:0; }
+    .vaihtoehto.valittu { border-color:var(--success); background:#dcfce7; color:#166534; }
     textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(99,102,241,.12); }
   </style>
 </head>
@@ -91,6 +97,72 @@ function aikaMinSek(sekunnit) {
   const kok = Math.round(sekunnit);
   return { m: Math.floor(kok / 60), s: kok % 60 };
 }
+// Kaava-tehtävän aika-syöte on kellonaika hh:mm:ss (<input type="time">), tallennetaan sekunteina vuorokauden alusta
+function sekKelloksi(sekunnit) {
+  if (sekunnit === null || sekunnit === undefined || sekunnit === "") return "";
+  const k = Math.round(sekunnit) % 86400, p = n => String(n).padStart(2, "0");
+  return `${p(Math.floor(k / 3600))}:${p(Math.floor(k / 60) % 60)}:${p(k % 60)}`;
+}
+function kelloKentasta(id) {
+  const v = document.getElementById(id)?.value || "";
+  if (!v) return null;
+  const [h, m, s] = v.split(":").map(Number);
+  return h * 3600 + m * 60 + (s || 0);
+}
+
+// Leimaussivun ajastin tälle vartiolle palvelimelta: {alku_sek, loppu_sek, kesto, kaynnissa} tai null
+let ajastin = null;
+async function haeAjastin() {
+  try {
+    const res = await fetch(`/api/ajastimet?rasti_id=${rastiId}&vartio=${encodeURIComponent(vartio)}`);
+    ajastin = res.ok ? ((await res.json())[0] || null) : null;
+  } catch (e) { ajastin = null; }
+  return ajastin;
+}
+// Ajastimen arvot aika-syötteille: yksi syöte = kesto, muuten ensimmäinen = aloitusaika ja viimeinen = lopetusaika
+// (käynnissä olevalle lopetusaika = aloitus + tähänastinen kesto)
+function ajastimenArvot(aikaSyotteet, a) {
+  if (!a || !aikaSyotteet.length) return {};
+  if (aikaSyotteet.length === 1) return { [aikaSyotteet[0].nimi]: a.kesto };
+  return {
+    [aikaSyotteet[0].nimi]: a.alku_sek,
+    [aikaSyotteet[aikaSyotteet.length - 1].nimi]: a.loppu_sek ?? (a.alku_sek + a.kesto) % 86400,
+  };
+}
+// ⏱-nappi: hakee ajastimen tuoreena palvelimelta ja täyttää aika-syötteet
+async function taytaAjastimesta(prefix, id) {
+  const item = prefix === 't' ? tehtavat.find(t => t.id === id) : tehtavat.flatMap(t => t.osatehtavat || []).find(o => o.id === id);
+  const a = await haeAjastin();
+  if (!a) { alert("Tälle vartiolle ei ole käynnistetty ajastinta."); return; }
+  const arvot = ajastimenArvot((item.syotteet || []).filter(s => s.tyyppi === 'aika'), a);
+  Object.entries(arvot).forEach(([nimi, sek]) => {
+    document.getElementById(`${prefix}-syote-${id}-${nimi}`).value = sekKelloksi(sek);
+  });
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function kriteeritHTML(ohje) { return ohje ? `<div class="kriteerit">${esc(ohje)}</div>` : ""; }
+
+// Arvostelun vaihtoehdot valintoina: valittu pistemäärä menee piilokenttään inputId (luetaan kuten numerokenttä)
+// naytaPisteet=false: pelkkä valintaruutu (esim. kaavan hylätty-merkintä), jonka arvo ei ole pisteitä
+function vaihtoehdotHTML(inputId, vaihtoehdot, arvo, prefix, id, naytaPisteet = true) {
+  const nyk = arvo === "" || arvo == null ? null : Number(arvo);
+  const valittuIdx = vaihtoehdot.findIndex(v => v.pisteet === nyk);
+  return `<div class="vaihtoehdot">
+    ${vaihtoehdot.map((v, i) => `<button type="button" class="vaihtoehto ${i === valittuIdx ? 'valittu' : ''}" data-pisteet="${v.pisteet}"
+        onclick="valitseVaihtoehto(this,'${inputId}','${prefix}',${id})">
+      <span class="vo-ruutu">${i === valittuIdx ? '☑' : '☐'}</span>${naytaPisteet ? `<span class="vo-p">${String(v.pisteet).replace('.', ',')} p</span>` : ''}<span>${esc(v.kuvaus)}</span>
+    </button>`).join("")}
+    <input type="hidden" id="${inputId}" value="${nyk ?? ''}">
+  </div>`;
+}
+function valitseVaihtoehto(btn, inputId, prefix, id) {
+  const ryhma = btn.parentElement, oli = btn.classList.contains('valittu');
+  ryhma.querySelectorAll('.vaihtoehto').forEach(b => { b.classList.remove('valittu'); b.querySelector('.vo-ruutu').textContent = '☐'; });
+  if (!oli) { btn.classList.add('valittu'); btn.querySelector('.vo-ruutu').textContent = '☑'; }
+  document.getElementById(inputId).value = oli ? '' : btn.dataset.pisteet;  // uusi painallus poistaa valinnan
+  updateParentTotal(id, prefix);
+}
 
 function tyyppiClass(t) { return 'tyyppi-badge tyyppi-'+t; }
 function tyyppiLabel(t) { return {pisteet:'Pisteet',oikein_vaarin:'Oikein/Väärin',ajanotto:'Ajanotto',kaava:'Kaava'}[t]||t; }
@@ -126,6 +198,7 @@ function updateParentTotal(id, prefix) {
 function recomputeParentTotal(t) {
   const el = document.getElementById(`parent-total-${t.id}`);
   if (!el) return;
+  if (t.tyyppi === 'kaava') { el.textContent = 'Yhteensä: lasketaan tehtävän kaavalla tuloksissa'; return; }
   let sum = 0, max = 0, hasAny = false;
   t.osatehtavat.forEach(o => {
     const score = getOsaScore(o);
@@ -142,7 +215,7 @@ function getSyoteArvot(item, prefix) {
   (item.syotteet || []).forEach(s => {
     const inputId = `${prefix}-syote-${item.id}-${s.nimi}`;
     if (s.tyyppi === 'aika') {
-      const sekunnit = aikaKentista(inputId);
+      const sekunnit = kelloKentasta(inputId);
       if (sekunnit !== null) { arvot[s.nimi] = sekunnit; mikaanTaytetty = true; }
     } else {
       const v = parseFloat(document.getElementById(inputId)?.value);
@@ -184,28 +257,39 @@ function getOsaScore(o) {
   }
 }
 
-function renderScore(tyyppi, id, prefix, existing, max, timerSek, syotteet, existingSyotteet) {
+// ajastin (palvelimelta) täyttää ajat valmiiksi — kaava-tehtävässä vain tehtävätasolla (esitayta), ajanotossa aina.
+// Kaava-tehtävän aika-syötteen vieressä ⏱-nappi hakee ajat ajastimelta myös osatehtäviin.
+function renderScore(tyyppi, id, prefix, existing, max, timerSek, syotteet, existingSyotteet, esitayta, vaihtoehdot) {
   if (tyyppi === 'kaava') {
     existingSyotteet = existingSyotteet || {};
     if (!syotteet || !syotteet.length) return '<span class="max-hint">Tälle tehtävälle ei ole määritelty syötteitä.</span>';
+    // Esitäyttö tehdään vain jos kaikki aika-syötteet ovat vielä tyhjiä
+    const aikaSyotteet = syotteet.filter(s => s.tyyppi === 'aika');
+    const esitaytto = esitayta && aikaSyotteet.every(s => existingSyotteet[s.nimi] == null) ? ajastimenArvot(aikaSyotteet, ajastin) : {};
+    const viimeinen = aikaSyotteet[aikaSyotteet.length - 1];
     return syotteet.map(s => {
       const inputId = `${prefix}-syote-${id}-${s.nimi}`;
       if (s.tyyppi === 'aika') {
-        const aikaVal = aikaMinSek(existingSyotteet[s.nimi]);
         return `<div class="syote-input-row">
           <span class="syote-label">${s.kuvaus || s.nimi}</span>
-          <input type="number" class="aika-input" id="${inputId}-m" value="${aikaVal.m}" placeholder="min" min="0" step="1">
-          <span class="max-hint">min</span>
-          <input type="number" class="aika-input" id="${inputId}-s" value="${aikaVal.s}" placeholder="sek" min="0" max="59" step="1">
-          <span class="max-hint">sek</span>
+          <input type="time" step="1" class="score-input" style="width:auto" id="${inputId}" value="${sekKelloksi(existingSyotteet[s.nimi] ?? esitaytto[s.nimi])}">
+          ${s === viimeinen ? `<button type="button" class="btn btn-ghost btn-xs" title="Hae aloitus- ja lopetusaika ajastimelta" onclick="taytaAjastimesta('${prefix}', ${id})">⏱</button>` : ''}
         </div>`;
       }
       const v = existingSyotteet[s.nimi] ?? "";
+      if (s.vaihtoehdot && s.vaihtoehdot.length) {
+        return `<div class="syote-input-row" style="margin-bottom:8px">
+          <span class="syote-label" style="width:100%">${esc(s.kuvaus || s.nimi)}</span>
+          ${vaihtoehdotHTML(inputId, s.vaihtoehdot, v, prefix, id, s.vaihtoehdot.length > 1)}
+        </div>`;
+      }
       return `<div class="syote-input-row">
         <span class="syote-label">${s.kuvaus || s.nimi}</span>
         <input type="number" class="score-input" id="${inputId}" value="${v}" placeholder="${s.nimi}" step="0.01">
       </div>`;
     }).join("");
+  } else if (tyyppi === 'pisteet' && vaihtoehdot && vaihtoehdot.length) {
+    return vaihtoehdotHTML(`${prefix}-${id}`, vaihtoehdot, existing?.pisteet ?? "", prefix, id);
   } else if (tyyppi === 'pisteet') {
     const val = existing?.pisteet ?? "";
     return `<div class="score-row">
@@ -235,9 +319,7 @@ function renderScore(tyyppi, id, prefix, existing, max, timerSek, syotteet, exis
 function renderTehtavat(tehtavat, suoritus) {
   const lista = document.getElementById("tehtavat-lista");
   lista.innerHTML = "";
-  const timerKey = `kipa_timer_${rastinumero}_${vartio}`;
-  let timerSek = null;
-  try { const td=JSON.parse(localStorage.getItem(timerKey)||"null"); if(td) timerSek=td.elapsed||null; } catch(e){}
+  const timerSek = ajastin ? ajastin.kesto : null;
 
   tehtavat.forEach(t => {
     const hasOsa = t.osatehtavat && t.osatehtavat.length > 0;
@@ -245,7 +327,7 @@ function renderTehtavat(tehtavat, suoritus) {
 
     let scoreHTML = "";
     if (!hasOsa) {
-      scoreHTML = renderScore(t.tyyppi, t.id, 't', existingT, t.max_pisteet, timerSek, t.syotteet, suoritus.syotteet?.[`tehtava:${t.id}`]);
+      scoreHTML = renderScore(t.tyyppi, t.id, 't', existingT, t.max_pisteet, timerSek, t.syotteet, suoritus.syotteet?.[`tehtava:${t.id}`], true, t.vaihtoehdot);
     }
 
     let osaHTML = "";
@@ -257,7 +339,8 @@ function renderTehtavat(tehtavat, suoritus) {
             <span class="osa-nimi">${o.nimi}</span>
             <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
           </div>
-          ${renderScore(o.tyyppi, o.id, 'o', existingO, o.max_pisteet, null, o.syotteet, suoritus.syotteet?.[`osatehtava:${o.id}`])}
+          ${kriteeritHTML(o.ohje)}
+          ${renderScore(o.tyyppi, o.id, 'o', existingO, o.max_pisteet, null, o.syotteet, suoritus.syotteet?.[`osatehtava:${o.id}`], false, o.vaihtoehdot)}
         </div>`;
       }).join("");
       osaHTML += `<div class="parent-total" id="parent-total-${t.id}">Yhteensä: —</div>`;
@@ -270,6 +353,7 @@ function renderTehtavat(tehtavat, suoritus) {
         <span class="tehtava-nimi">${t.nimi}</span>
         <span class="${tyyppiClass(t.tyyppi)}">${tyyppiLabel(t.tyyppi)}</span>
       </div>
+      ${kriteeritHTML(t.ohje)}
       ${scoreHTML}${osaHTML}
     `;
     lista.appendChild(card);
@@ -312,8 +396,7 @@ function tarkistaRajat() {
   const tarkistaSyotteet = (item, prefix, nimi) => {
     (item.syotteet || []).forEach(s => {
       const inputId = `${prefix}-syote-${item.id}-${s.nimi}`;
-      if (s.tyyppi === 'aika') tarkistaAika(inputId, `${nimi} / ${s.kuvaus || s.nimi}`);
-      else tarkista(inputId, `${nimi} / ${s.kuvaus || s.nimi}`, null);
+      if (s.tyyppi !== 'aika') tarkista(inputId, `${nimi} / ${s.kuvaus || s.nimi}`, null);  // kellonajan tarkistaa selain
     });
   };
   for (const t of tehtavat) {
@@ -372,9 +455,6 @@ async function tallenna() {
       body: JSON.stringify({kommentti, token}) });
     if (!kRes.ok) { const e = await kRes.json().catch(() => ({})); throw new Error(e.detail || kRes.status); }
 
-    // Clear timer
-    localStorage.removeItem(`kipa_timer_${rastinumero}_${vartio}`);
-
     document.getElementById("ok-viesti").style.display = "flex";
     setTimeout(() => takaisin(), 1200);
   } catch(e) {
@@ -392,7 +472,8 @@ async function init() {
     const [rastiRes, suoritusRes, tehtavatRes] = await Promise.all([
       fetch("/api/rastit"),
       fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${rastiId}&token=${encodeURIComponent(token)}`, { headers: adminOtsikot }),
-      fetch(`/api/tehtavat?rasti_id=${rastiId}`)
+      fetch(`/api/tehtavat?rasti_id=${rastiId}`),
+      haeAjastin()
     ]);
 
     if (suoritusRes.status === 401) {

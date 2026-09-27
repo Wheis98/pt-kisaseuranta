@@ -1,10 +1,17 @@
 from datetime import datetime
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
-from app import db, sessions, admin_sessions, LeimausIn, JonoIn, STATIC_DIR
+from app import db, sessions, admin_sessions, LeimausIn, JonoIn, AjastinIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
+
+def _nyt_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+def _pysayta_ajastin(numero: str, vartio: str) -> None:
+    # Kirjaa lopetusajan käynnissä olevalle ajastimelle (ei tee mitään jos ajastinta ei ole tai se on jo pysäytetty)
+    db.execute("UPDATE ajastimet SET loppu=? WHERE numero=? AND vartio=? AND loppu IS NULL", (_nyt_iso(), numero, vartio))
 
 def kirjaa_jono(numero: str, vartio: str, tapahtuma: str, aika: str, kayttaja: str):
     # Kirjaa jonon tapahtuman (jonoon / rastille / poistettu) — jono-taulusta rivi poistuu, loki jää
@@ -57,6 +64,69 @@ def leimaus(l: LeimausIn):
         poistettu = db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip())).rowcount
         if poistettu:
             kirjaa_jono(l.rastinumero.strip(), l.vartio.strip(), "rastille", l.aika, session["nimi"])
+        # Uusi käynti aloittaa puhtaalta ajastimelta (edellisen käynnin ajat on jo tallennettu pisteisiin)
+        db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip()))
+    else:
+        _pysayta_ajastin(l.rastinumero.strip(), l.vartio.strip())
+    db.commit()
+    return {"ok": True}
+
+def _ajastin_dict(r) -> dict:
+    # Ajastimen tiedot näytettäväksi: kellonajat hh:mm:ss, samat sekunteina vuorokauden alusta (kaavan
+    # aika-syötteitä varten) ja kesto sekunteina — käynnissä olevalle kesto tähän hetkeen asti.
+    alku = datetime.fromisoformat(r["alku"])
+    loppu = datetime.fromisoformat(r["loppu"]) if r["loppu"] else None
+    sek = lambda d: d.hour * 3600 + d.minute * 60 + d.second
+    return {
+        "vartio": r["vartio"],
+        "alku": alku.strftime("%H:%M:%S"),
+        "loppu": loppu.strftime("%H:%M:%S") if loppu else None,
+        "alku_sek": sek(alku),
+        "loppu_sek": sek(loppu) if loppu else None,
+        "kesto": int(((loppu or datetime.now()) - alku).total_seconds()),
+        "kaynnissa": loppu is None,
+    }
+
+@router.get("/api/ajastimet")
+def hae_ajastimet(numero: str = "", rasti_id: int = 0, vartio: str = ""):
+    # Rastin ajastimet (rastinumerolla tai rasti_id:llä), valinnaisesti yhdelle vartiolle
+    if not numero and rasti_id:
+        r = db.execute("SELECT numero FROM rastit WHERE id=?", (rasti_id,)).fetchone()
+        numero = r["numero"] if r else ""
+    query, params = "SELECT vartio, alku, loppu FROM ajastimet WHERE numero=?", [numero]
+    if vartio:
+        query += " AND vartio=?"; params.append(vartio)
+    return [_ajastin_dict(r) for r in db.execute(query, params).fetchall()]
+
+def _ajastin_istunto(a: AjastinIn) -> dict:
+    session = sessions.get(a.token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Tuntematon istunto — kirjaudu uudelleen")
+    return session
+
+@router.post("/api/ajastin/aloita")
+def aloita_ajastin(a: AjastinIn):
+    # Kirjaa aloitusajan palvelimen kellosta. Jo käynnistettyä ajastinta ei aloiteta uudelleen (nollaa ensin).
+    session = _ajastin_istunto(a)
+    numero, vartio = a.rastinumero.strip(), a.vartio.strip()
+    if db.execute("SELECT id FROM ajastimet WHERE numero=? AND vartio=?", (numero, vartio)).fetchone():
+        raise HTTPException(status_code=409, detail="Ajastin on jo käynnistetty — nollaa se ensin")
+    db.execute("INSERT INTO ajastimet (numero, vartio, alku, kayttaja) VALUES (?,?,?,?)",
+               (numero, vartio, _nyt_iso(), session["nimi"]))
+    db.commit()
+    return {"ok": True}
+
+@router.post("/api/ajastin/pysayta")
+def pysayta_ajastin(a: AjastinIn):
+    _ajastin_istunto(a)
+    _pysayta_ajastin(a.rastinumero.strip(), a.vartio.strip())
+    db.commit()
+    return {"ok": True}
+
+@router.post("/api/ajastin/nollaa")
+def nollaa_ajastin(a: AjastinIn):
+    _ajastin_istunto(a)
+    db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (a.rastinumero.strip(), a.vartio.strip()))
     db.commit()
     return {"ok": True}
 

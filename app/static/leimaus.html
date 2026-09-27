@@ -38,6 +38,7 @@
       <ul>
         <li><strong>Rastilla nyt</strong> — vartiot jotka ovat tällä hetkellä sisäänleimattuna rastillesi.</li>
         <li>Paina <strong>Ulos</strong> kun vartio lähtee rastilta.</li>
+        <li><strong>Ajastin</strong> — ▶ kirjaa aloitusajan ja ⏹ lopetusajan (Ulos pysäyttää ajastimen myös). Ajat täyttyvät pisteiden syöttöön alku- ja loppuajaksi. ↺ nollaa ajastimen.</li>
         <li><strong>QR-koodi</strong> — skannaa vartion QR-koodi, jolloin nimi täyttyy automaattisesti.</li>
         <li><strong>Manuaalinen</strong> — kirjoita vartion nimi käsin autocomplete-haulla.</li>
         <li>Paina <strong>Tallenna leimaus</strong> viedäksesi vartion suoraan rastille, tai <strong>Lisää jonoon</strong> jos rasti on varattu.</li>
@@ -235,33 +236,23 @@ document.getElementById("vartio").addEventListener("keydown", e => {
 });
 
 // ── Ajastimet ──
-let timerIntervals = {};
+// Aloitus- ja lopetusaika kirjataan palvelimen kellosta kantaan, joten ajat näkyvät kaikilla laitteilla ja
+// pisteiden syötössä. ajastimet[vartio] = palvelimen tiedot + haettu (Date.now() hakuhetkellä käynnissä olevan keston laskuun).
+let ajastimet = {};
 
-function timerKey(v) { return `kipa_timer_${rastinumero}_${v}`; }
-
-function aloitaAjastin(vartio) {
-  const key = timerKey(vartio);
-  const existing = JSON.parse(localStorage.getItem(key) || "null");
-  if (existing && existing.running) return;
-  const elapsed = existing ? (existing.elapsed || 0) : 0;
-  localStorage.setItem(key, JSON.stringify({start: Date.now() - elapsed*1000, running:true, elapsed:0}));
-  paivitaAjastinUI(vartio);
+async function haeAjastimet() {
+  const res = await fetch("/api/ajastimet?numero="+encodeURIComponent(rastinumero));
+  if (!res.ok) return;
+  const haettu = Date.now();
+  ajastimet = {};
+  (await res.json()).forEach(a => { ajastimet[a.vartio] = {...a, haettu}; });
 }
 
-function pysaytaAjastin(vartio) {
-  const key = timerKey(vartio);
-  const td = JSON.parse(localStorage.getItem(key) || "null");
-  if (!td) return;
-  const elapsed = (Date.now() - td.start) / 1000;
-  localStorage.setItem(key, JSON.stringify({start:td.start, running:false, elapsed}));
-  if (timerIntervals[vartio]) { clearInterval(timerIntervals[vartio]); delete timerIntervals[vartio]; }
-  paivitaAjastinUI(vartio);
-}
-
-function nollaaAjastin(vartio) {
-  localStorage.removeItem(timerKey(vartio));
-  if (timerIntervals[vartio]) { clearInterval(timerIntervals[vartio]); delete timerIntervals[vartio]; }
-  paivitaAjastinUI(vartio);
+async function ajastinToiminto(toiminto, vartio) {
+  if (toiminto === "nollaa" && !confirm(`Nollataanko vartion ${vartio} ajastin? Aloitus- ja lopetusaika poistetaan.`)) return;
+  const res = await fetch("/api/ajastin/"+toiminto, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio}) });
+  if (!res.ok) { const e=await res.json().catch(()=>({})); if(res.status===401){localStorage.clear();window.location.href="/";return;} setViesti("Virhe: "+(e.detail||res.status),"error"); }
+  await paivitaAktiiviset();
 }
 
 function sToStr(s) {
@@ -269,38 +260,36 @@ function sToStr(s) {
   return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
-function paivitaAjastinUI(vartio) {
-  const el = document.getElementById(`timer-display-${vartio}`);
-  if (!el) return;
-  const td = JSON.parse(localStorage.getItem(timerKey(vartio)) || "null");
-  const startBtn = document.getElementById(`timer-start-${vartio}`);
-  const stopBtn = document.getElementById(`timer-stop-${vartio}`);
-  const resetBtn = document.getElementById(`timer-reset-${vartio}`);
-  if (!td) {
-    el.textContent = "00:00"; if(startBtn) startBtn.style.display="inline-flex"; if(stopBtn) stopBtn.style.display="none"; if(resetBtn) resetBtn.style.display="none"; return;
-  }
-  if (td.running) {
-    if (!timerIntervals[vartio]) {
-      timerIntervals[vartio] = setInterval(() => {
-        const t2=JSON.parse(localStorage.getItem(timerKey(vartio))||"null");
-        if (!t2||!t2.running) { clearInterval(timerIntervals[vartio]); delete timerIntervals[vartio]; return; }
-        const e2=(Date.now()-t2.start)/1000;
-        const e2el=document.getElementById(`timer-display-${vartio}`);
-        if(e2el) e2el.textContent=sToStr(e2);
-      }, 500);
-    }
-    const cur=(Date.now()-td.start)/1000;
-    el.textContent=sToStr(cur);
-    if(startBtn) startBtn.style.display="none"; if(stopBtn) stopBtn.style.display="inline-flex"; if(resetBtn) resetBtn.style.display="inline-flex";
-  } else {
-    el.textContent=sToStr(td.elapsed||0);
-    if(startBtn) startBtn.style.display="inline-flex"; if(stopBtn) stopBtn.style.display="none"; if(resetBtn) resetBtn.style.display="inline-flex";
-  }
+function ajastinKesto(a) { return a.kaynnissa ? a.kesto + (Date.now()-a.haettu)/1000 : a.kesto; }
+
+function ajastinTeksti(a) {
+  if (!a) return "–";
+  return `${a.alku} → ${a.loppu || "…"} (${sToStr(ajastinKesto(a))})`;
 }
+
+function ajastinHTML(vartio) {
+  const a = ajastimet[vartio];
+  const vEsc = vartio.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  return `
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.82rem">
+      <span style="font-weight:700;font-family:monospace;font-size:.9rem" class="ajastin-naytto" data-vartio="">${ajastinTeksti(a)}</span>
+      ${!a ? `<button class="btn btn-ghost btn-xs" title="Käynnistä (kirjaa aloitusajan)" onclick="ajastinToiminto('aloita','${vEsc}')">▶</button>` : ''}
+      ${a && a.kaynnissa ? `<button class="btn btn-ghost btn-xs" title="Pysäytä (kirjaa lopetusajan)" onclick="ajastinToiminto('pysayta','${vEsc}')">⏹</button>` : ''}
+      ${a ? `<button class="btn btn-ghost btn-xs" title="Nollaa ajastin" onclick="ajastinToiminto('nollaa','${vEsc}')">↺</button>` : ''}
+    </div>`;
+}
+
+// Käynnissä olevien ajastimien kesto päivittyy näytölle puolen sekunnin välein
+setInterval(() => {
+  document.querySelectorAll(".ajastin-naytto").forEach(el => {
+    const a = ajastimet[el.dataset.vartio];
+    if (a && a.kaynnissa) el.textContent = ajastinTeksti(a);
+  });
+}, 500);
 
 // ── Aktiiviset ──
 async function paivitaAktiiviset() {
-  const res = await fetch("/api/aktiiviset?numero="+encodeURIComponent(rastinumero));
+  const [res] = await Promise.all([fetch("/api/aktiiviset?numero="+encodeURIComponent(rastinumero)), haeAjastimet()]);
   if (!res.ok) return;
   const lista = await res.json();
   const div = document.getElementById("aktiiviset-lista");
@@ -310,14 +299,7 @@ async function paivitaAktiiviset() {
   eiDiv.style.display="none";
   lista.forEach(v => {
     const vEsc = v.vartio.replace(/'/g,"\\'");
-    const timerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.82rem">
-        <span style="font-weight:700;font-family:monospace;font-size:.95rem;min-width:46px" id="timer-display-${v.vartio}">00:00</span>
-        <button class="btn btn-ghost btn-xs" id="timer-start-${v.vartio}" onclick="aloitaAjastin('${vEsc}')">▶</button>
-        <button class="btn btn-ghost btn-xs" id="timer-stop-${v.vartio}" style="display:none" onclick="pysaytaAjastin('${vEsc}')">⏸</button>
-        <button class="btn btn-ghost btn-xs" id="timer-reset-${v.vartio}" style="display:none" onclick="nollaaAjastin('${vEsc}')">↺</button>
-      </div>
-    `;
+    const timerHTML = ajastinHTML(v.vartio);
     const item = document.createElement("div");
     item.className="active-item";
     item.style.flexDirection="column";
@@ -333,8 +315,8 @@ async function paivitaAktiiviset() {
       </div>
       ${timerHTML}
     `;
+    item.querySelector(".ajastin-naytto").dataset.vartio = v.vartio;
     div.appendChild(item);
-    paivitaAjastinUI(v.vartio);
   });
 }
 
@@ -345,7 +327,7 @@ async function leimaaUlos(vartio, btn) {
   try {
     const res = await fetch("/api/leimaus", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"ulos"}) });
     if (!res.ok) { const e=await res.json(); if(res.status===401){localStorage.clear();window.location.href="/";return;} throw new Error(e.detail); }
-    pysaytaAjastin(vartio);
+    // Palvelin pysäyttää vartion ajastimen ulosleimauksessa (kirjaa lopetusajan)
     // Kaikki päivitetään erikseen, jotta yhden epäonnistuminen ei estä "Merkitse pisteet" -kortin näkymistä
     await Promise.allSettled([paivitaAktiiviset(), paivitaTilanne(), paivitaPisteetOdottavat()]);
     const pisteKortti = document.getElementById("pisteet-odottavat");
