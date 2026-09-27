@@ -324,6 +324,9 @@ async function paivitaAktiiviset() {
 let uudelleenVartio=null;
 
 async function leimaaUlos(vartio, btn) {
+  // Varmistus ennen ulosleimausta, ettei väärää vartiota leimata vahingossa ulos
+  const numero = vartioData.find(v => v.nimi === vartio)?.numero;
+  if (!confirm(`Oletko varma, että haluat kirjata vartion ${vartio}${numero ? ` (nro ${numero})` : ""} ulos rastilta?`)) return;
   btn.disabled=true; btn.textContent="…";
   try {
     const res = await fetch("/api/leimaus", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"ulos"}) });

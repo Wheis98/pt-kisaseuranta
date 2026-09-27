@@ -36,7 +36,7 @@ def tehtavat_page():
 def get_tehtavat(rasti_id: int):
     # Palauttaa rastin kaikki tehtävät osatehtavineen
     tehtavat_rows = db.execute(
-        "SELECT id, rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot FROM tehtavat WHERE rasti_id=? ORDER BY jarjestys, id",
+        "SELECT id, rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot, keskiyo FROM tehtavat WHERE rasti_id=? ORDER BY jarjestys, id",
         (rasti_id,)
     ).fetchall()
     result = []
@@ -44,7 +44,7 @@ def get_tehtavat(rasti_id: int):
         d = _lue_vaihtoehdot(dict(t))
         d["syotteet"] = _hae_syotteet("tehtava", t["id"])
         osa_rows = db.execute(
-            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
+            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
             (t["id"],)
         ).fetchall()
         osatehtavat = []
@@ -66,8 +66,8 @@ def create_tehtava(t: TehtavaIn, x_admin_token: str = Header(None)):
     if t.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM tehtavat WHERE rasti_id=?", (t.rasti_id,)).fetchone()[0]
-    db.execute("INSERT INTO tehtavat (rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot) VALUES (?,?,?,?,?,?,?,?)",
-               (t.rasti_id, t.nimi.strip(), t.tyyppi, t.max_pisteet, max_j + 1, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot)))
+    db.execute("INSERT INTO tehtavat (rasti_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, ohje, vaihtoehdot, keskiyo) VALUES (?,?,?,?,?,?,?,?,?)",
+               (t.rasti_id, t.nimi.strip(), t.tyyppi, t.max_pisteet, max_j + 1, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot), int(t.keskiyo)))
     db.commit()
     return {"id": db.execute("SELECT last_insert_rowid()").fetchone()[0], "ok": True}
 
@@ -79,8 +79,8 @@ def update_tehtava(tehtava_id: int, t: TehtavaIn, x_admin_token: str = Header(No
         raise HTTPException(status_code=400, detail="Nimi vaaditaan")
     if t.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
-    db.execute("UPDATE tehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=? WHERE id=?",
-               (t.nimi.strip(), t.tyyppi, t.max_pisteet, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot), tehtava_id))
+    db.execute("UPDATE tehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=?, keskiyo=? WHERE id=?",
+               (t.nimi.strip(), t.tyyppi, t.max_pisteet, t.kaava, t.ohje, _vaihtoehdot_json(t.vaihtoehdot), int(t.keskiyo), tehtava_id))
     db.commit()
     return {"ok": True}
 
@@ -110,9 +110,9 @@ def create_osatehtava(o: OsatehtavaIn, x_admin_token: str = Header(None)):
     if o.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM osatehtavat WHERE tehtava_id=?", (o.tehtava_id,)).fetchone()[0]
-    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot) VALUES (?,?,?,?,?,?,?,?,?)",
+    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo) VALUES (?,?,?,?,?,?,?,?,?,?)",
                (o.tehtava_id, o.nimi.strip(), o.tyyppi, o.max_pisteet, max_j + 1, o.kaava, seuraava_muuttuja(o.tehtava_id),
-                o.ohje, _vaihtoehdot_json(o.vaihtoehdot)))
+                o.ohje, _vaihtoehdot_json(o.vaihtoehdot), int(o.keskiyo)))
     db.commit()
     return {"id": db.execute("SELECT last_insert_rowid()").fetchone()[0], "ok": True}
 
@@ -124,8 +124,8 @@ def update_osatehtava(osa_id: int, o: OsatehtavaIn, x_admin_token: str = Header(
         raise HTTPException(status_code=400, detail="Nimi vaaditaan")
     if o.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
-    db.execute("UPDATE osatehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=? WHERE id=?",
-               (o.nimi.strip(), o.tyyppi, o.max_pisteet, o.kaava, o.ohje, _vaihtoehdot_json(o.vaihtoehdot), osa_id))
+    db.execute("UPDATE osatehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=?, keskiyo=? WHERE id=?",
+               (o.nimi.strip(), o.tyyppi, o.max_pisteet, o.kaava, o.ohje, _vaihtoehdot_json(o.vaihtoehdot), int(o.keskiyo), osa_id))
     db.commit()
     return {"ok": True}
 

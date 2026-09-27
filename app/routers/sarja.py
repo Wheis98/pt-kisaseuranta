@@ -47,6 +47,7 @@ def delete_sarja(sarja_id: int, x_admin_token: str = Header(None)):
     # Poistaa sarjan ja sen reittimäärityksen — ei koske vartioiden sarja-kenttää
     vaadi_admin(x_admin_token)
     db.execute("DELETE FROM sarja_rastit WHERE sarja_id=?", (sarja_id,))
+    db.execute("DELETE FROM lahto_sarjat WHERE sarja_id=?", (sarja_id,))
     db.execute("DELETE FROM sarjat WHERE id=?", (sarja_id,))
     db.commit()
     return {"ok": True}

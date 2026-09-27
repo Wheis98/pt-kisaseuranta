@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kipa — Lähdöt ja kisan käynnistys</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .lahto-card { border-left:5px solid var(--border); }
+    .lahto-card.kaynnissa { border-left-color:var(--success); }
+    .lahto-rivi { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:10px; }
+    .lahto-rivi input[type=text], .lahto-rivi select { padding:8px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:.9rem; background:white; }
+    .lahto-rivi input[type=text] { flex:1; min-width:140px; }
+    .lahto-rivi label.pieni { font-size:.75rem; color:var(--muted); display:block; margin-bottom:2px; }
+    .sarja-valinnat { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+    .sarja-valinnat label { display:flex; align-items:center; gap:5px; border:1.5px solid var(--border); border-radius:999px; padding:4px 11px; font-size:.85rem; cursor:pointer; background:white; }
+    .sarja-valinnat label.valittu { border-color:var(--primary); background:#eef2ff; font-weight:600; }
+    .sarja-valinnat label.muualla { color:var(--muted); }
+    .sarja-valinnat label.muualla small { font-size:.72rem; }
+    .tila { font-size:.85rem; margin:4px 0 10px; }
+    .tila.ok { color:var(--success); font-weight:700; }
+    .vartiot { font-size:.8rem; color:var(--muted); margin-bottom:10px; }
+    .kaynnista-btn { font-size:1.05rem; padding:12px; }
+    .tulos { font-size:.85rem; margin-top:10px; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <span class="header-title">Lähdöt ja kisan käynnistys</span>
+  </div>
+  <div class="header-right">
+    <a href="admin.html" class="btn btn-white btn-sm">← Admin</a>
+    <button class="btn-help" onclick="avaaOhje()">?</button>
+  </div>
+</div>
+<div class="modal-overlay" style="display:none" id="ohje-modal" onclick="if(event.target===this)suljeMo()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Lähdöt — ohjeet</span>
+      <button class="modal-close" onclick="suljeMo()">×</button>
+    </div>
+    <div class="modal-body">
+      <h3>Lähtöjen määrittely</h3>
+      <ul>
+        <li>Lisää lähtö jokaista lähtöryhmää varten (esim. <em>Lähtö 1</em>, <em>Lähtö 2</em>).</li>
+        <li>Valitse lähdölle <strong>lähtörasti</strong> — rasti, jolta lähdön sarjat aloittavat.</li>
+        <li>Valitse sarjat, jotka lähtevät tässä lähdössä, ja paina <strong>Tallenna</strong>. Sarja voi kuulua vain yhteen lähtöön; toiseen lähtöön valittu sarja siirtyy.</li>
+        <li>Lähtöön kuuluvat ne vartiot, joiden sarja on valittu (vartion <em>Sarja</em>-kentän pitää vastata sarjan nimeä).</li>
+      </ul>
+      <h3>Käynnistys</h3>
+      <ul>
+        <li><strong>▶ Käynnistä lähtö</strong> leimaa kaikki lähdön vartiot sisään lähtörastille ja käynnistää niiden ajastimen samalla sekunnilla. Aloitusaika näkyy rastilla ja siirtyy ajanottotehtävien alkuajaksi.</li>
+        <li>Rastihenkilö pysäyttää ajastimen ⏹ vartion maaliintulossa ja leimaa vartion ulos.</li>
+        <li>Jos vartio on käynnistyshetkellä sisällä jollain muulla rastilla, sitä ei siirretä — se näkyy tuloksessa ohitettuna.</li>
+        <li><strong>Uusintalähtö</strong> (esim. varaslähtö): käynnistä lähtö uudelleen. Lähtörastilla jo olevat vartiot saavat uuden aloitusajan, eikä niitä leimata toiseen kertaan.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="container-wide">
+  <div class="card" style="margin-top:24px">
+    <div class="card-title">Lisää lähtö</div>
+    <div id="virhe" class="msg msg-error" style="display:none"></div>
+    <div class="lahto-rivi">
+      <input type="text" id="uusi-nimi" placeholder="esim. Lähtö 1">
+      <select id="uusi-rasti"></select>
+      <button class="btn btn-primary" onclick="lisaaLahto()">Lisää</button>
+    </div>
+  </div>
+
+  <div id="ei-sarjoja" class="msg msg-warn" style="display:none">Sarjoja ei ole vielä luotu. Luo sarjat ensin sivulla <a href="sarjat.html">Hallitse sarjoja</a>.</div>
+  <div id="lahdot"></div>
+  <div id="ilman-lahtoa" class="msg msg-warn" style="display:none"></div>
+</div>
+
+<script>
+const adminToken = localStorage.getItem("admin_token");
+if (!adminToken) window.location.href = "/admin.html";
+function adminHeaders() { return { "Content-Type":"application/json", "x-admin-token":adminToken }; }
+
+function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
+function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
+document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function kello(iso) { return iso ? iso.slice(11, 19) : ""; }
+
+let lahdot = [], rastit = [], sarjat = [];
+
+function rastiValinnat(valittu) {
+  return `<option value="">— valitse lähtörasti —</option>` +
+    rastit.map(r => `<option value="${r.id}" ${r.id === valittu ? "selected" : ""}>Rasti ${esc(r.numero)}</option>`).join("");
+}
+
+async function lataa() {
+  const [lRes, rRes, sRes] = await Promise.all([
+    fetch("/api/lahdot", { headers: adminHeaders() }), fetch("/api/rastit"), fetch("/api/sarjat")
+  ]);
+  if (lRes.status === 401 || lRes.status === 403) { localStorage.removeItem("admin_token"); location.href = "/admin.html"; return; }
+  lahdot = await lRes.json(); rastit = await rRes.json(); sarjat = await sRes.json();
+  document.getElementById("uusi-rasti").innerHTML = rastiValinnat(null);
+  document.getElementById("ei-sarjoja").style.display = sarjat.length ? "none" : "flex";
+  render();
+}
+
+function render() {
+  const sarjanLahto = {};
+  lahdot.forEach(l => l.sarjat.forEach(s => { sarjanLahto[s.id] = l; }));
+  const div = document.getElementById("lahdot");
+  div.innerHTML = "";
+  lahdot.forEach(l => {
+    const card = document.createElement("div");
+    card.className = "card lahto-card" + (l.kaynnistetty ? " kaynnissa" : "");
+    card.innerHTML = `
+      <div class="lahto-rivi">
+        <div style="flex:1;min-width:140px"><label class="pieni">Nimi</label><input type="text" class="l-nimi" value="${esc(l.nimi)}" style="width:100%"></div>
+        <div><label class="pieni">Lähtörasti</label><select class="l-rasti">${rastiValinnat(l.rasti_id)}</select></div>
+      </div>
+      <label class="pieni" style="font-size:.75rem;color:var(--muted)">Sarjat tässä lähdössä</label>
+      <div class="sarja-valinnat">
+        ${sarjat.map(s => {
+          const muu = sarjanLahto[s.id] && sarjanLahto[s.id].id !== l.id ? sarjanLahto[s.id] : null;
+          const valittu = sarjanLahto[s.id]?.id === l.id;
+          return `<label class="${valittu ? "valittu" : ""} ${muu ? "muualla" : ""}">
+            <input type="checkbox" class="l-sarja" value="${s.id}" ${valittu ? "checked" : ""} onchange="this.parentElement.classList.toggle('valittu', this.checked)">
+            ${esc(s.nimi)}${muu ? ` <small>(${esc(muu.nimi)})</small>` : ""}</label>`;
+        }).join("")}
+      </div>
+      <div class="vartiot">${l.vartiot.length} vartiota${l.vartiot.length ? ": " + l.vartiot.map(esc).join(", ") : ""}</div>
+      <div class="tila ${l.kaynnistetty ? "ok" : ""}">${l.kaynnistetty ? `✔ Käynnistetty klo ${kello(l.kaynnistetty)}${l.rasti_numero ? " — rasti " + esc(l.rasti_numero) : ""}` : "Ei käynnistetty"}</div>
+      <div class="row" style="flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="tallennaLahto(${l.id}, this)">Tallenna</button>
+        <button class="btn btn-danger btn-sm" onclick="poistaLahto(${l.id})">Poista</button>
+      </div>
+      <button class="btn btn-success btn-block kaynnista-btn" style="margin-top:12px" onclick="kaynnista(${l.id}, this)">
+        ▶ ${l.kaynnistetty ? "Käynnistä uudelleen" : "Käynnistä lähtö"}: ${esc(l.nimi)}</button>
+      <div class="tulos"></div>`;
+    card.dataset.id = l.id;
+    div.appendChild(card);
+  });
+  const ilman = sarjat.filter(s => !sarjanLahto[s.id]);
+  const el = document.getElementById("ilman-lahtoa");
+  el.style.display = lahdot.length && ilman.length ? "flex" : "none";
+  el.textContent = `Sarjat ilman lähtöä: ${ilman.map(s => s.nimi).join(", ")}`;
+}
+
+function lomakkeenTiedot(card) {
+  const rasti = card.querySelector(".l-rasti").value;
+  return {
+    nimi: card.querySelector(".l-nimi").value.trim(),
+    rasti_id: rasti ? parseInt(rasti) : null,
+    sarja_idt: [...card.querySelectorAll(".l-sarja:checked")].map(c => parseInt(c.value)),
+  };
+}
+
+async function lisaaLahto() {
+  const nimi = document.getElementById("uusi-nimi").value.trim();
+  const rasti = document.getElementById("uusi-rasti").value;
+  const virhe = document.getElementById("virhe");
+  virhe.style.display = "none";
+  if (!nimi) { virhe.textContent = "Anna lähdölle nimi."; virhe.style.display = "flex"; return; }
+  const res = await fetch("/api/lahto", { method:"POST", headers:adminHeaders(),
+    body: JSON.stringify({ nimi, rasti_id: rasti ? parseInt(rasti) : null, sarja_idt: [] }) });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); virhe.textContent = e.detail || "Virhe"; virhe.style.display = "flex"; return; }
+  document.getElementById("uusi-nimi").value = "";
+  await lataa();
+}
+
+async function tallennaLahto(id, btn) {
+  const card = btn.closest(".lahto-card");
+  const res = await fetch(`/api/lahto/${id}`, { method:"PUT", headers:adminHeaders(), body: JSON.stringify(lomakkeenTiedot(card)) });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.detail || "Tallennus epäonnistui"); return; }
+  await lataa();
+}
+
+async function poistaLahto(id) {
+  if (!confirm("Poistetaanko lähtö? Leimaukset ja ajastimet säilyvät.")) return;
+  await fetch(`/api/lahto/${id}`, { method:"DELETE", headers:adminHeaders() });
+  await lataa();
+}
+
+async function kaynnista(id, btn) {
+  const card = btn.closest(".lahto-card");
+  const l = lahdot.find(x => x.id === id);
+  // Tallennetaan ensin lomakkeelle mahdollisesti tehdyt muutokset, jotta käynnistys koskee näkyviä valintoja
+  const tiedot = lomakkeenTiedot(card);
+  const muuttunut = tiedot.nimi !== l.nimi || tiedot.rasti_id !== l.rasti_id ||
+    JSON.stringify([...tiedot.sarja_idt].sort()) !== JSON.stringify(l.sarjat.map(s => s.id).sort());
+  if (muuttunut) {
+    const res = await fetch(`/api/lahto/${id}`, { method:"PUT", headers:adminHeaders(), body: JSON.stringify(tiedot) });
+    if (!res.ok) { alert("Lähdön tallennus epäonnistui"); return; }
+    await lataa();
+    return kaynnista(id, document.querySelector(`.lahto-card[data-id="${id}"] .kaynnista-btn`));
+  }
+  if (!l.rasti_id) { alert("Valitse lähdölle lähtörasti ja tallenna."); return; }
+  if (!l.vartiot.length) { alert("Lähdössä ei ole vartioita. Valitse sarjat ja tallenna."); return; }
+  const uudelleenKysymys = aika =>
+    `⚠ ${l.nimi} on jo käynnissä — käynnistetty klo ${kello(aika)}.\n\n` +
+    `Käynnistetäänkö lähtö UUDELLEEN? Kaikkien ${l.vartiot.length} vartion aloitusaika rastilla ${l.rasti_numero} ` +
+    `vaihtuu tähän hetkeen ja jo mitattu aika menetetään.\n\nPaina OK vain, jos lähtö todella aloitetaan alusta (esim. varaslähtö).`;
+  const kysymys = l.kaynnistetty
+    ? uudelleenKysymys(l.kaynnistetty)
+    : `Käynnistetäänkö ${l.nimi}?\n\n${l.vartiot.length} vartiota (${l.sarjat.map(s => s.nimi).join(", ")}) leimataan sisään rastille ${l.rasti_numero} ja niiden ajastin käynnistyy nyt.`;
+  if (!confirm(kysymys)) return;
+  btn.disabled = true; btn.textContent = "Käynnistetään…";
+  const kutsu = uudelleen => fetch(`/api/lahto/${id}/kaynnista${uudelleen ? "?uudelleen=true" : ""}`, { method:"POST", headers:adminHeaders() });
+  let res = await kutsu(!!l.kaynnistetty);
+  let data = await res.json().catch(() => ({}));
+  // Sivu oli vanhentunut: lähtö oli jo käynnistetty (esim. toinen admin) — kysytään uudelleenkäynnistyksen varmistus
+  if (res.status === 409 && String(data.detail).startsWith("jo_kaynnistetty:")) {
+    if (!confirm(uudelleenKysymys(data.detail.split(":").slice(1).join(":")))) { await lataa(); return; }
+    res = await kutsu(true);
+    data = await res.json().catch(() => ({}));
+  }
+  if (!res.ok) { alert(data.detail || "Käynnistys epäonnistui"); await lataa(); return; }
+  await lataa();
+  const tulos = document.querySelector(`.lahto-card[data-id="${id}"] .tulos`);
+  tulos.innerHTML = `<div class="msg msg-ok" style="display:block">
+      ✔ Käynnistetty klo ${kello(data.kaynnistetty)} rastilla ${esc(data.rasti)}<br>
+      Leimattu sisään: ${data.leimattu.length}${data.uusittu.length ? ` · uusi aloitusaika (olivat jo rastilla): ${data.uusittu.length}` : ""}
+    </div>
+    ${data.ohitettu.length ? `<div class="msg msg-error" style="display:block;margin-top:6px">Ohitettu ${data.ohitettu.length}:<br>${data.ohitettu.map(o => `${esc(o.vartio)} — ${esc(o.syy)}`).join("<br>")}</div>` : ""}`;
+}
+
+lataa();
+</script>
+</body>
+</html>

@@ -99,10 +99,10 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
 
     if t.tehtava_id is not None:
         taso, kohde_id = "tehtava", t.tehtava_id
-        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet FROM tehtavat WHERE id=?", (kohde_id,)).fetchone()
+        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet, keskiyo FROM tehtavat WHERE id=?", (kohde_id,)).fetchone()
     elif t.osatehtava_id is not None:
         taso, kohde_id = "osatehtava", t.osatehtava_id
-        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet FROM osatehtavat WHERE id=?", (kohde_id,)).fetchone()
+        kohde = db.execute("SELECT tyyppi, kaava, max_pisteet, keskiyo FROM osatehtavat WHERE id=?", (kohde_id,)).fetchone()
     else:
         raise HTTPException(status_code=400, detail="tehtava_id tai osatehtava_id vaaditaan")
 
@@ -113,6 +113,7 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
         # koska muiden vartioiden arvot voivat vielä muuttua).
         from datetime import datetime
         nyt = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        _tarkista_aikajarjestys(taso, kohde_id, t.syotteet, bool(kohde["keskiyo"]))
         for nimi, arvo in t.syotteet.items():
             sm = db.execute("SELECT id FROM syotemaaritteet WHERE taso=? AND kohde_id=? AND nimi=?", (taso, kohde_id, nimi)).fetchone()
             if not sm:
@@ -157,6 +158,24 @@ def save_tulos(t: TulosIn, x_admin_token: str = Header(None)):
     merkitse_pisteytetyksi(suoritus["vartio"], suoritus["rasti_id"])
     db.commit()
     return {"ok": True}
+
+def _kello(sek: float) -> str:
+    k = int(sek) % 86400
+    return f"{k // 3600:02d}:{k // 60 % 60:02d}:{k % 60:02d}"
+
+def _tarkista_aikajarjestys(taso: str, kohde_id: int, syotteet: dict, keskiyo: bool) -> None:
+    # Ensimmäinen aika-syöte on alkuaika ja viimeinen loppuaika. Loppuaika ennen alkuaikaa hyväksytään
+    # vain, jos tehtävälle on sallittu keskiyön ylitys (muuten aikavali() tulkitsisi suorituksen ~24 h mittaiseksi).
+    if keskiyo:
+        return
+    ajat = [r["nimi"] for r in db.execute(
+        "SELECT nimi FROM syotemaaritteet WHERE taso=? AND kohde_id=? AND tyyppi='aika' ORDER BY jarjestys, id",
+        (taso, kohde_id)).fetchall()]
+    if len(ajat) < 2 or ajat[0] not in syotteet or ajat[-1] not in syotteet:
+        return
+    alku, loppu = syotteet[ajat[0]], syotteet[ajat[-1]]
+    if loppu < alku:
+        raise HTTPException(status_code=400, detail=f"Loppuaika {_kello(loppu)} on ennen alkuaikaa {_kello(alku)} — tarkista ajat")
 
 @router.get("/api/tulokset")
 def get_tulokset(x_admin_token: str = Header(None)):

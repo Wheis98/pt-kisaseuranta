@@ -186,6 +186,18 @@ CREATE TABLE IF NOT EXISTS ajastimet (
   kayttaja TEXT NOT NULL DEFAULT '',
   UNIQUE(numero, vartio)
 );
+CREATE TABLE IF NOT EXISTS lahdot (
+  id INTEGER PRIMARY KEY,
+  nimi TEXT NOT NULL,
+  rasti_id INTEGER,        -- lähtörasti: käynnistys leimaa vartiot sisään ja käynnistää tämän rastin ajastimet
+  jarjestys INTEGER NOT NULL DEFAULT 0,
+  kaynnistetty TEXT        -- viimeisimmän käynnistyksen hetki (ISO), NULL = ei käynnistetty
+);
+CREATE TABLE IF NOT EXISTS lahto_sarjat (
+  lahto_id INTEGER NOT NULL,
+  sarja_id INTEGER NOT NULL UNIQUE,  -- sarja lähtee vain yhdessä lähdössä
+  PRIMARY KEY (lahto_id, sarja_id)
+);
 CREATE TABLE IF NOT EXISTS sarjat (
   id INTEGER PRIMARY KEY,
   nimi TEXT NOT NULL UNIQUE
@@ -353,6 +365,14 @@ for _taulu, _sarake in (("tehtavat", "ohje"), ("tehtavat", "vaihtoehdot"), ("osa
     except Exception:
         pass
 
+# Migraatio: saako kaava-tehtävän loppuaika olla alkuaikaa aiemmin (suoritus yli keskiyön)
+for _taulu in ("tehtavat", "osatehtavat"):
+    try:
+        db.execute(f"ALTER TABLE {_taulu} ADD COLUMN keskiyo INTEGER NOT NULL DEFAULT 0")
+        db.commit()
+    except Exception:
+        pass
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -405,6 +425,12 @@ class LeimausIn(BaseModel):
     uudelleen: bool = False  # True = toinen käynti samalla rastilla hyväksytty
 
 
+class LahtoIn(BaseModel):
+    nimi: str
+    rasti_id: int | None = None
+    sarja_idt: list[int] = []
+
+
 class AjastinIn(BaseModel):
     token: str
     rastinumero: str
@@ -425,6 +451,7 @@ class TehtavaIn(BaseModel):
     kaava: str | None = None
     ohje: str | None = None                          # arvostelukriteerit, näkyy pistesivulla
     vaihtoehdot: list[Vaihtoehto] | None = None      # pisteet-tyypin valittavat vaihtoehdot
+    keskiyo: bool = False                            # kaavan loppuaika saa olla ennen alkuaikaa
 
 
 class OsatehtavaIn(BaseModel):
@@ -436,6 +463,7 @@ class OsatehtavaIn(BaseModel):
     kaava: str | None = None
     ohje: str | None = None
     vaihtoehdot: list[Vaihtoehto] | None = None
+    keskiyo: bool = False
 
 
 class SyoteMaariteIn(BaseModel):

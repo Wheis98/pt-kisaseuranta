@@ -36,6 +36,7 @@
     .ohje code { background:#f1f5f9; padding:1px 4px; border-radius:4px; font-family:monospace; font-size:.85em; }
     .ohje pre { background:#f1f5f9; padding:8px 10px; border-radius:6px; font-size:.78rem; white-space:pre-wrap; word-break:break-all; margin:0 0 10px; }
     .ohje ul ul { margin-top:4px; }
+    .keskiyo-valinta { flex-basis:100%; font-size:.82rem; display:flex; align-items:center; gap:6px; cursor:pointer; }
     .arv-label { font-size:.78rem; color:var(--muted); margin:8px 0 2px; display:block; }
     .muuttuja-badge { background:#fef3c7; color:#92400e; font-family:monospace; font-weight:700; font-size:.85rem; padding:1px 7px; border-radius:5px; }
   </style>
@@ -88,6 +89,7 @@
         <li><strong>Piste</strong>-syöte on luku. <strong>Aika</strong>-syöte on kellonaika hh:mm:ss.</li>
         <li>Leimaussivun ajastin (▶ / ⏹) täyttää aika-syötteet: ensimmäiseen aloitusaika, viimeiseen lopetusaika. Jos aika-syötteitä on vain yksi, siihen tulee kesto. Pistesivun ⏱-nappi hakee ajat uudelleen.</li>
         <li>Syötteen nimi kirjoitetaan kaavaan sellaisenaan, joten käytä lyhyitä nimiä ilman välilyöntejä (esim. <code>a</code>, <code>alku</code>).</li>
+        <li>Kun kaava-tehtävässä on alku- ja loppuaika, pistesivu näyttää ne tallennettaessa varmistettavaksi. Loppuaika ennen alkuaikaa estetään, ellei tehtävälle ole valittu <strong>Suoritus voi ylittää keskiyön</strong>.</li>
         <li><strong>Testaa kaava</strong> laskee kaavan niin, että kaikki syötteet ovat 1 — sillä näkee onko kaavassa kirjoitusvirhe.</li>
       </ul>
 
@@ -148,6 +150,7 @@
       <button class="btn btn-primary" style="height:40px" onclick="lisaaTehtava()">Lisää</button>
     </div>
     <div id="uusi-kaava-editor" class="kaava-editor" style="display:none">
+      <label class="keskiyo-valinta"><input type="checkbox" id="uusi-keskiyo"> Suoritus voi ylittää keskiyön (loppuaika saa olla ennen alkuaikaa)</label>
       <textarea id="uusi-kaava" class="kaava-textarea" placeholder="Kaava, esim. interpoloi(aikavali(alku,loppu), min(kaikki(aikavali(alku,loppu))), 10, max(kaikki(aikavali(alku,loppu))))"></textarea>
       <div id="uusi-kaava-ohje" class="kaava-ohje"></div>
     </div>
@@ -315,6 +318,7 @@ function avaMuokkaus(kohde, id, idx, osaIdx) {
       <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
     </div>
     <div id="m-kaava-editor-${id}" class="kaava-editor" style="display:${t.tyyppi==='kaava'?'flex':'none'}">
+      <label class="keskiyo-valinta"><input type="checkbox" id="m-keskiyo-${id}" ${t.keskiyo ? 'checked' : ''}> Suoritus voi ylittää keskiyön (loppuaika saa olla ennen alkuaikaa)</label>
       <textarea id="m-kaava-${id}" class="kaava-textarea" placeholder="Kaava">${t.kaava || ''}</textarea>
       <div class="kaava-ohje">${kaavaOhjeHTML(kohde === 'tehtava' ? t.osatehtavat : null)}</div>
     </div>
@@ -341,6 +345,7 @@ async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
   const maxVal = document.getElementById(`m-max-${id}`).value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
   const kaava = tyyppi === 'kaava' ? document.getElementById(`m-kaava-${id}`).value.trim() : null;
+  const keskiyo = tyyppi === 'kaava' && document.getElementById(`m-keskiyo-${id}`).checked;
   const ohje = document.getElementById(`m-ohje-${id}`).value.trim() || null;
   let vaihtoehdot = null;
   if (tyyppi === 'pisteet') {
@@ -350,8 +355,8 @@ async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
   if (!nimi) return;
 
   const body = kohde === 'tehtava'
-    ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot }
-    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot };
+    ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot, keskiyo }
+    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot, keskiyo };
   const url = kohde === 'tehtava' ? `/api/tehtava/${id}` : `/api/osatehtava/${id}`;
   const res = await fetch(url, { method:"PUT", headers:adminHeaders(), body:JSON.stringify(body) });
   if (!res.ok) { const e = await res.json().catch(() => ({})); alert("Tallennus epäonnistui: " + JSON.stringify(e.detail || res.status)); return; }
@@ -380,6 +385,7 @@ function avaaLisaaOsa(tehtavaId) {
       <button class="btn btn-ghost btn-xs" onclick="this.closest('.edit-row').remove()">Peruuta</button>
     </div>
     <div id="osa-kaava-editor-${tehtavaId}" class="kaava-editor" style="display:none">
+      <label class="keskiyo-valinta"><input type="checkbox" id="osa-keskiyo-${tehtavaId}"> Suoritus voi ylittää keskiyön (loppuaika saa olla ennen alkuaikaa)</label>
       <textarea id="osa-kaava-${tehtavaId}" class="kaava-textarea" placeholder="Kaava"></textarea>
       <div class="kaava-ohje">${kaavaOhjeHTML()}</div>
     </div>
@@ -398,8 +404,9 @@ async function lisaaOsatehtava(tehtavaId) {
   const maxVal = document.getElementById(`osa-max-${tehtavaId}`).value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
   const kaava = tyyppi === 'kaava' ? document.getElementById(`osa-kaava-${tehtavaId}`).value.trim() : null;
+  const keskiyo = tyyppi === 'kaava' && document.getElementById(`osa-keskiyo-${tehtavaId}`).checked;
   if (!nimi) return;
-  await fetch("/api/osatehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({tehtava_id:tehtavaId,nimi,tyyppi,max_pisteet,kaava}) });
+  await fetch("/api/osatehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({tehtava_id:tehtavaId,nimi,tyyppi,max_pisteet,kaava,keskiyo}) });
   await lataaTehtavat();
 }
 
@@ -409,10 +416,11 @@ async function lisaaTehtava() {
   const maxVal = document.getElementById("uusi-max").value;
   const max_pisteet = maxVal !== "" ? parseFloat(maxVal) : null;
   const kaava = tyyppi === 'kaava' ? document.getElementById("uusi-kaava").value.trim() : null;
+  const keskiyo = tyyppi === 'kaava' && document.getElementById("uusi-keskiyo").checked;
   const virhe = document.getElementById("virhe");
   virhe.style.display = "none";
   if (!nimi) { virhe.textContent="Syötä tehtävän nimi."; virhe.style.display="flex"; return; }
-  const res = await fetch("/api/tehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({rasti_id:rastiId,nimi,tyyppi,max_pisteet,kaava}) });
+  const res = await fetch("/api/tehtava", { method:"POST", headers:adminHeaders(), body:JSON.stringify({rasti_id:rastiId,nimi,tyyppi,max_pisteet,kaava,keskiyo}) });
   if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
   document.getElementById("uusi-nimi").value=""; document.getElementById("uusi-max").value=""; document.getElementById("uusi-kaava").value="";
   await lataaTehtavat();

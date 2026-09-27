@@ -415,14 +415,46 @@ function tarkistaRajat() {
   return virheet;
 }
 
+// Kaava-tehtävien alku- ja loppuajat (ensimmäinen ja viimeinen aika-syöte) varmistusta varten.
+// Palauttaa {rivit, virheet}: loppuaika ennen alkuaikaa on virhe, ellei tehtävälle ole sallittu keskiyön ylitystä.
+function tarkistaAikaparit() {
+  const rivit = [], virheet = [];
+  const kasittele = (item, prefix, nimi) => {
+    const ajat = (item.syotteet || []).filter(s => s.tyyppi === 'aika');
+    if (ajat.length < 2) return;
+    const alkuEl = document.getElementById(`${prefix}-syote-${item.id}-${ajat[0].nimi}`);
+    const loppuEl = document.getElementById(`${prefix}-syote-${item.id}-${ajat[ajat.length - 1].nimi}`);
+    alkuEl.style.borderColor = loppuEl.style.borderColor = "";
+    const alku = kelloKentasta(alkuEl.id), loppu = kelloKentasta(loppuEl.id);
+    if (alku === null || loppu === null) return;
+    const yliKeskiyon = loppu < alku;
+    if (yliKeskiyon && !item.keskiyo) {
+      alkuEl.style.borderColor = loppuEl.style.borderColor = "var(--danger, #dc2626)";
+      virheet.push(`${nimi}: loppuaika (${ajat[ajat.length - 1].kuvaus || ajat[ajat.length - 1].nimi} ${sekKelloksi(loppu)}) on ennen alkuaikaa (${ajat[0].kuvaus || ajat[0].nimi} ${sekKelloksi(alku)})`);
+      return;
+    }
+    const kesto = yliKeskiyon ? loppu + 86400 - alku : loppu - alku;
+    rivit.push(`${nimi}\n   ${ajat[0].kuvaus || ajat[0].nimi}: ${sekKelloksi(alku)}\n   ${ajat[ajat.length - 1].kuvaus || ajat[ajat.length - 1].nimi}: ${sekKelloksi(loppu)}${yliKeskiyon ? " (seuraavana päivänä)" : ""}\n   Kesto: ${sekKelloksi(kesto)}`);
+  };
+  for (const t of tehtavat) {
+    if (t.osatehtavat && t.osatehtavat.length) {
+      t.osatehtavat.forEach(o => { if (o.tyyppi === 'kaava') kasittele(o, 'o', `${t.nimi} / ${o.nimi}`); });
+    } else if (t.tyyppi === 'kaava') kasittele(t, 't', t.nimi);
+  }
+  return { rivit, virheet };
+}
+
 async function tallenna() {
   const virheet = tarkistaRajat();
+  const aikaparit = tarkistaAikaparit();
+  virheet.push(...aikaparit.virheet);
   if (virheet.length) {
     const el = document.getElementById("virhe");
     el.textContent = "Tarkista pisteet ja täytä uudelleen: " + virheet.join("; ");
     el.style.display = "flex";
     return;
   }
+  if (aikaparit.rivit.length && !confirm(`Tarkista kellonajat ennen tallennusta:\n\n${aikaparit.rivit.join("\n\n")}\n\nOvatko ajat oikein?`)) return;
   const btn = document.getElementById("tallenna-btn");
   btn.disabled = true; btn.textContent = "Tallennetaan...";
   document.getElementById("virhe").style.display = "none";
@@ -465,6 +497,11 @@ async function tallenna() {
     btn.disabled = false; btn.textContent = "Tallenna pisteet";
   }
 }
+
+// Hiiren rulla ei saa muuttaa aktiivisen aika- tai numerokentän arvoa vahingossa (selain muuttaa sitä rullatessa)
+document.addEventListener("wheel", e => {
+  if (e.target.matches?.('input[type=time], input[type=number]') && document.activeElement === e.target) e.target.blur();
+}, { passive: true });
 
 async function init() {
   const lataus = document.getElementById("lataus");
