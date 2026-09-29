@@ -6,7 +6,7 @@ Vanhassa Kipassa tehtävät kuuluvat sarjoille, tässä järjestelmässä rastei
 tehtävästä tehdään oma rasti (tunnuksena tehtävän nimi), jolla on yksi kaava-tehtävä. Sarjan reitiksi
 tulevat sen tehtävien rastit Kipan järjestysnumeron mukaan. Jos saman niminen tehtävä on eri sarjoissa
 eri tavalla määritelty, käytetään yleisintä versiota; syöte, joka puuttuu joidenkin sarjojen versiosta,
-on vapaaehtoinen (tyhjä = 0).
+rajataan niille sarjoille, joilla se on (muille se ei näy pistesivulla ja on kaavassa 0).
 
 Kipan osatehtävän parametrit (suor, muk, tapa, parhaan_haku...) sijoitetaan valmiiksi kaavaan samalla
 tavalla kuin Kipan TulosLaskin tekee, joten tuloksena on app/kaava.py:n ymmärtämä Kipa-syntaksin kaava.
@@ -17,6 +17,7 @@ keskeytetään, jos rastilla on jo tuloksia. Sarjojen reitit kirjoitetaan aina u
 Vartioita ei tuoda.
 """
 import collections
+import json
 import os
 import re
 import sys
@@ -132,8 +133,8 @@ for nimi, versiot in tehtavat.items():
         poikkeavat = sorted(sarjat[v[0]] for v in versiot if avain(v[3]) != yleisin)
         print(f"HUOM: {nimi_luettavaksi(nimi)} on määritelty eri tavalla sarjoissa {', '.join(poikkeavat)} "
               f"— käytetään muiden sarjojen versiota ({kpl}/{len(versiot)})")
-        # Syöte, joka puuttuu joidenkin sarjojen versiosta (esim. Energy Vaasan Potkuri), on vapaaehtoinen:
-        # tyhjänä se lasketaan nollaksi, ja kuvaukseen merkitään sarjat, joita se koskee
+        # Syöte, joka puuttuu joidenkin sarjojen versiosta (esim. Energy Vaasan Potkuri), rajataan niille
+        # sarjoille, joilla se on; oletus(x, 0) varmuudeksi vartiolle, jonka sarjaa ei ole sarjat-taulussa
         for osa in valitut[nimi]["osat"]:
             for s in osa["syotteet"]:
                 mukana = sorted(sarjat[v[0]] for v in versiot
@@ -141,8 +142,8 @@ for nimi, versiot in tehtavat.items():
                                        for o in v[3]["osat"]))
                 if len(mukana) < len(versiot):
                     osa["kaava"] = re.sub(r"(?<![\w.])" + s["nimi"] + r"(?![\w(])", f"oletus({s['nimi']}, 0)", osa["kaava"])
-                    s["kuvaus"] += f" – vain {', '.join(mukana)}"
-                    print(f"      {osa['nimi']}/{s['nimi']} {s['kuvaus']}: vapaaehtoinen, tyhjä = 0")
+                    s["sarjat"] = mukana
+                    print(f"      {osa['nimi']}/{s['nimi']} {s['kuvaus']}: vain sarjoille {', '.join(mukana)}")
 
 # Rastien yleinen järjestys: sarja, jossa on eniten tehtäviä, ja sen järjestys; muut perään
 def sarjan_tehtavat(spk):
@@ -174,8 +175,9 @@ def tarkista(nimi, m):
 def lisaa_syotteet(taso, kohde_id, syotteet):
     for j, s in enumerate(syotteet, 1):
         tyyppi = "aika" if s["tyyppi"] == "aika" or re.search(r"ylitetty aika", s["kuvaus"], re.I) else "piste"
-        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys) VALUES (?,?,?,?,?,?)",
-                   (taso, kohde_id, s["nimi"], s["kuvaus"], tyyppi, j))
+        rajaus = json.dumps(sorted(sarja_idt[n] for n in s["sarjat"])) if s.get("sarjat") else None
+        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, sarjat) VALUES (?,?,?,?,?,?,?)",
+                   (taso, kohde_id, s["nimi"], s["kuvaus"], tyyppi, j, rajaus))
 
 def poista_tehtavat(rasti_id):
     # Rastin tehtävät, osatehtävät ja syötemääritteet (tuloksia ei ole, se on tarkistettu ennen tätä)
@@ -218,6 +220,10 @@ def lisaa_tehtava(rasti_id, nimi, m):
 for nimi in rastijarjestys:
     tarkista(nimi, valitut[nimi])
 
+for snimi in sarjat.values():
+    db.execute("INSERT OR IGNORE INTO sarjat (nimi) VALUES (?)", (snimi,))
+sarja_idt = {r["nimi"]: r["id"] for r in db.execute("SELECT id, nimi FROM sarjat").fetchall()}
+
 tuntemattomat = korvattavat - {nimi_luettavaksi(n) for n in rastijarjestys}
 if tuntemattomat:
     sys.exit(f"--korvaa: tiedostossa ei ole tehtävää {', '.join(sorted(tuntemattomat))}")
@@ -244,8 +250,7 @@ for i, nimi in enumerate(rastijarjestys, 1):
 
 rasti_idt = {r["numero"]: r["id"] for r in db.execute("SELECT id, numero FROM rastit").fetchall()}
 for spk, snimi in sarjat.items():
-    db.execute("INSERT OR IGNORE INTO sarjat (nimi) VALUES (?)", (snimi,))
-    sarja_id = db.execute("SELECT id FROM sarjat WHERE nimi=?", (snimi,)).fetchone()["id"]
+    sarja_id = sarja_idt[snimi]
     reitti = [rasti_idt[nimi_luettavaksi(n)] for n in sarjan_tehtavat(spk)]
     db.execute("DELETE FROM sarja_rastit WHERE sarja_id=?", (sarja_id,))
     for j, rasti_id in enumerate(reitti):

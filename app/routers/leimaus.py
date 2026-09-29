@@ -186,6 +186,21 @@ def aktiiviset(numero: str):
     """, (numero,)).fetchall()
     return [dict(r) for r in rows]
 
+def _nakyy_vartiolle(sarake: str) -> str:
+    # SQL-ehto: sarjarajaus (JSON-lista sarja-id:istä tai NULL) sallii vartion l.vartio. Vartio, jonka sarjaa
+    # ei ole sarjat-taulussa, näkee kaiken (kuten pistesivulla ja tuloslaskennassa).
+    return f"""({sarake} IS NULL
+        OR NOT EXISTS (SELECT 1 FROM vartiot v JOIN sarjat sj ON sj.nimi = v.sarja WHERE v.nimi = l.vartio)
+        OR EXISTS (SELECT 1 FROM vartiot v JOIN sarjat sj ON sj.nimi = v.sarja, json_each({sarake}) je
+                   WHERE v.nimi = l.vartio AND je.value = sj.id))"""
+
+def _syotteita_nakyvissa(taso: str, kohde: str) -> str:
+    # SQL-ehto: kohteella ei ole syötteitä, tai ainakin yksi niistä näkyy vartion sarjalle. Jos kaikki syötteet
+    # on piilotettu, pistesivu ei näytä kohdetta eikä sille voi tallentaa tulosta, joten sitä ei odoteta.
+    return f"""(NOT EXISTS (SELECT 1 FROM syotemaaritteet sm WHERE sm.taso = '{taso}' AND sm.kohde_id = {kohde})
+        OR EXISTS (SELECT 1 FROM syotemaaritteet sm WHERE sm.taso = '{taso}' AND sm.kohde_id = {kohde}
+                   AND {_nakyy_vartiolle("sm.sarjat")}))"""
+
 @router.get("/api/pisteita-odottavat")
 def pisteita_odottavat(numero: str):
     # Palauttaa vartiot jotka on leimattu ulos tältä rastilta mutta joiden kaikkia tehtäviä ei ole vielä pisteytetty.
@@ -193,7 +208,7 @@ def pisteita_odottavat(numero: str):
     # Vain viimeisin leimaus per vartio ratkaisee (uudelleen sisään leimattu vartio ei ole vielä valmis).
     # Kun vartio tuodaan rastille uudelleen ja leimataan taas ulos, se nousee listalle vaikka kaikki tehtävät
     # olisi pisteytetty ensimmäisellä käynnillä, kunnes pisteet on tallennettu uudestaan.
-    rows = db.execute("""
+    rows = db.execute(f"""
         SELECT l.vartio, l.aika FROM leimaukset l
         JOIN rastit r ON r.numero = l.numero
         WHERE l.numero = ? AND l.tyyppi = 'ulos'
@@ -210,14 +225,17 @@ def pisteita_odottavat(numero: str):
                 SELECT 1 FROM tehtavat t
                 WHERE t.rasti_id = r.id
                 AND NOT EXISTS (SELECT 1 FROM osatehtavat o WHERE o.tehtava_id = t.id)
+                AND {_syotteita_nakyvissa("tehtava", "t.id")}
                 AND NOT EXISTS (
                     SELECT 1 FROM tehtava_tulokset tt JOIN suoritukset s ON s.id = tt.suoritus_id
                     WHERE s.vartio = l.vartio AND s.rasti_id = r.id AND tt.tehtava_id = t.id)
             )
-            -- osatehtävä, jolle ei ole tulosta
+            -- osatehtävä, jolle ei ole tulosta (vartion sarjalta piilotettuja ei odoteta)
             OR EXISTS (
                 SELECT 1 FROM osatehtavat o JOIN tehtavat t ON t.id = o.tehtava_id
                 WHERE t.rasti_id = r.id
+                AND {_nakyy_vartiolle("o.sarjat")}
+                AND {_syotteita_nakyvissa("osatehtava", "o.id")}
                 AND NOT EXISTS (
                     SELECT 1 FROM osatehtava_tulokset ot JOIN suoritukset s ON s.id = ot.suoritus_id
                     WHERE s.vartio = l.vartio AND s.rasti_id = r.id AND ot.osatehtava_id = o.id)

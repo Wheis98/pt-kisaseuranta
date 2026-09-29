@@ -503,6 +503,21 @@ document.addEventListener("wheel", e => {
   if (e.target.matches?.('input[type=time], input[type=number]') && document.activeElement === e.target) e.target.blur();
 }, { passive: true });
 
+// Piilottaa osatehtävät ja syötteet, jotka on rajattu muille sarjoille (tuloksissa ne ovat tämän sarjan vartiolle 0).
+// Kohta, jonka kaikki syötteet on piilotettu, ja tehtävä, jonka kaikki osatehtävät on piilotettu, jäävät kokonaan pois.
+function suodataSarjalle(tehtavat, sarjaId) {
+  const nakyy = x => !x.sarjat?.length || sarjaId == null || x.sarjat.includes(sarjaId);
+  const suodataSyotteet = x => {
+    const syotteet = (x.syotteet || []).filter(nakyy);
+    return x.syotteet?.length && !syotteet.length ? null : { ...x, syotteet };
+  };
+  return tehtavat.map(t => {
+    const osat = (t.osatehtavat || []).filter(nakyy).map(suodataSyotteet).filter(Boolean);
+    if (t.osatehtavat?.length) return osat.length ? { ...t, osatehtavat: osat } : null;
+    return suodataSyotteet(t);
+  }).filter(Boolean);
+}
+
 async function init() {
   const lataus = document.getElementById("lataus");
   try {
@@ -526,7 +541,7 @@ async function init() {
 
     const suoritus = await suoritusRes.json();
     suoritusId = suoritus.id;
-    tehtavat = await tehtavatRes.json();
+    tehtavat = suodataSarjalle(await tehtavatRes.json(), suoritus.sarja_id);
 
     lataus.style.display = "none";
 

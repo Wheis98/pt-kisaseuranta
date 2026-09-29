@@ -20,12 +20,22 @@ def _lue_vaihtoehdot(d: dict) -> dict:
     return d
 
 
+def _sarjat_json(sarjat) -> str | None:
+    # Sarjarajaus JSON-listana sarja-id:istä; tyhjä lista = kaikki sarjat (NULL)
+    return json.dumps(sorted(set(sarjat))) if sarjat else None
+
+
+def _lue_sarjat(d: dict) -> dict:
+    d["sarjat"] = json.loads(d["sarjat"]) if d.get("sarjat") else []
+    return d
+
+
 def _hae_syotteet(taso, kohde_id):
     rows = db.execute(
-        "SELECT id, taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot FROM syotemaaritteet WHERE taso=? AND kohde_id=? ORDER BY jarjestys, id",
+        "SELECT id, taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot, sarjat FROM syotemaaritteet WHERE taso=? AND kohde_id=? ORDER BY jarjestys, id",
         (taso, kohde_id)
     ).fetchall()
-    return [_lue_vaihtoehdot(dict(r)) for r in rows]
+    return [_lue_sarjat(_lue_vaihtoehdot(dict(r))) for r in rows]
 
 
 @router.get("/tehtavat.html")
@@ -44,12 +54,12 @@ def get_tehtavat(rasti_id: int):
         d = _lue_vaihtoehdot(dict(t))
         d["syotteet"] = _hae_syotteet("tehtava", t["id"])
         osa_rows = db.execute(
-            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
+            "SELECT id, tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo, sarjat FROM osatehtavat WHERE tehtava_id=? ORDER BY jarjestys, id",
             (t["id"],)
         ).fetchall()
         osatehtavat = []
         for o in osa_rows:
-            od = _lue_vaihtoehdot(dict(o))
+            od = _lue_sarjat(_lue_vaihtoehdot(dict(o)))
             od["syotteet"] = _hae_syotteet("osatehtava", o["id"])
             osatehtavat.append(od)
         d["osatehtavat"] = osatehtavat
@@ -110,9 +120,9 @@ def create_osatehtava(o: OsatehtavaIn, x_admin_token: str = Header(None)):
     if o.tyyppi not in TYYPIT:
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM osatehtavat WHERE tehtava_id=?", (o.tehtava_id,)).fetchone()[0]
-    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    db.execute("INSERT INTO osatehtavat (tehtava_id, nimi, tyyppi, max_pisteet, jarjestys, kaava, muuttuja, ohje, vaihtoehdot, keskiyo, sarjat) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                (o.tehtava_id, o.nimi.strip(), o.tyyppi, o.max_pisteet, max_j + 1, o.kaava, seuraava_muuttuja(o.tehtava_id),
-                o.ohje, _vaihtoehdot_json(o.vaihtoehdot), int(o.keskiyo)))
+                o.ohje, _vaihtoehdot_json(o.vaihtoehdot), int(o.keskiyo), _sarjat_json(o.sarjat)))
     db.commit()
     return {"id": db.execute("SELECT last_insert_rowid()").fetchone()[0], "ok": True}
 
@@ -126,6 +136,8 @@ def update_osatehtava(osa_id: int, o: OsatehtavaIn, x_admin_token: str = Header(
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
     db.execute("UPDATE osatehtavat SET nimi=?, tyyppi=?, max_pisteet=?, kaava=?, ohje=?, vaihtoehdot=?, keskiyo=? WHERE id=?",
                (o.nimi.strip(), o.tyyppi, o.max_pisteet, o.kaava, o.ohje, _vaihtoehdot_json(o.vaihtoehdot), int(o.keskiyo), osa_id))
+    if o.sarjat is not None:
+        db.execute("UPDATE osatehtavat SET sarjat=? WHERE id=?", (_sarjat_json(o.sarjat), osa_id))
     db.commit()
     return {"ok": True}
 
@@ -159,8 +171,8 @@ def _lisaa_syote(taso, kohde_id, s, x_admin_token):
         raise HTTPException(status_code=400, detail="Virheellinen syötteen tyyppi")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM syotemaaritteet WHERE taso=? AND kohde_id=?", (taso, kohde_id)).fetchone()[0]
     try:
-        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot) VALUES (?,?,?,?,?,?,?)",
-                   (taso, kohde_id, s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, max_j + 1, _vaihtoehdot_json(s.vaihtoehdot)))
+        db.execute("INSERT INTO syotemaaritteet (taso, kohde_id, nimi, kuvaus, tyyppi, jarjestys, vaihtoehdot, sarjat) VALUES (?,?,?,?,?,?,?,?)",
+                   (taso, kohde_id, s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, max_j + 1, _vaihtoehdot_json(s.vaihtoehdot), _sarjat_json(s.sarjat)))
         db.commit()
     except Exception:
         raise HTTPException(status_code=400, detail="Syöte tällä nimellä on jo olemassa")
@@ -175,6 +187,8 @@ def paivita_syote(syote_id: int, s: SyoteMaariteIn, x_admin_token: str = Header(
         raise HTTPException(status_code=400, detail="Virheellinen syötteen tyyppi")
     db.execute("UPDATE syotemaaritteet SET nimi=?, kuvaus=?, tyyppi=?, vaihtoehdot=? WHERE id=?",
                (s.nimi.strip(), s.kuvaus.strip(), s.tyyppi, _vaihtoehdot_json(s.vaihtoehdot), syote_id))
+    if s.sarjat is not None:
+        db.execute("UPDATE syotemaaritteet SET sarjat=? WHERE id=?", (_sarjat_json(s.sarjat), syote_id))
     db.commit()
     return {"ok": True}
 

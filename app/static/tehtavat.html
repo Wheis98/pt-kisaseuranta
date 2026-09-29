@@ -93,6 +93,13 @@
         <li><strong>Testaa kaava</strong> laskee kaavan niin, että kaikki syötteet ovat 1 — sillä näkee onko kaavassa kirjoitusvirhe.</li>
       </ul>
 
+      <h3>Kohta vain osalle sarjoista</h3>
+      <ul>
+        <li>Jos jokin arvostelukohta ei koske kaikkia sarjoja (esim. Potkuri vain Harmaa, Keltainen ja Ruskea), rajaa se sarjoille: syötteen <strong>Sarjat</strong>-painike tai osatehtävän <strong>Muokkaa</strong> → sarjojen valintaruudut.</li>
+        <li>Muiden sarjojen vartioille kohta ei näy pistesivulla, ja se lasketaan kaavassa nollaksi (osatehtävä = 0 p).</li>
+        <li>Kun mitään sarjaa ei ole valittu (tai kaikki on valittu), kohta näkyy kaikille.</li>
+      </ul>
+
       <h3>Kaavan kirjoittaminen</h3>
       <ul>
         <li><code>aikavali(a,b)</code> — kahden kellonajan erotus sekunteina (toimii myös keskiyön yli).</li>
@@ -174,6 +181,7 @@ const rastiId = parseInt(params.get("rasti_id"));
 if (!rastiId) window.location.href = "/rastit.html";
 
 let tehtavat = [];
+let sarjat = [];
 let editingId = null;
 
 function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
@@ -221,8 +229,9 @@ function paivitaUusiTyyppi() {
 }
 
 async function lataaTehtavat() {
-  const [tRes, rRes] = await Promise.all([fetch(`/api/tehtavat?rasti_id=${rastiId}`), fetch("/api/rastit")]);
+  const [tRes, rRes, sRes] = await Promise.all([fetch(`/api/tehtavat?rasti_id=${rastiId}`), fetch("/api/rastit"), fetch("/api/sarjat")]);
   tehtavat = await tRes.json();
+  sarjat = await sRes.json();
   const rastit = await rRes.json();
   const rasti = rastit.find(r => r.id === rastiId);
   if (rasti) {
@@ -271,6 +280,7 @@ function renderLista() {
           <span class="${tyyppiClass(o.tyyppi)}">${tyyppiLabel(o.tyyppi)}</span>
           ${o.max_pisteet !== null ? `<span style="font-size:.8rem;color:var(--muted)">max ${o.max_pisteet} p</span>` : ''}
           ${arvosteluMerkit(o)}
+          ${sarjaMerkki(o)}
           ${o.tyyppi==='kaava' ? `<button class="btn btn-ghost btn-xs" onclick="avaaSyoteEditori('osatehtava',${o.id})">Syötteet (${o.syotteet.length})</button>` : ''}
           <button class="btn btn-ghost btn-xs" onclick="avaMuokkaus('osatehtava',${o.id},${i},${oi})">Muokkaa</button>
           <button class="btn btn-danger btn-xs" onclick="poistaOsatehtava(${o.id})">Poista</button>
@@ -328,6 +338,7 @@ function avaMuokkaus(kohde, id, idx, osaIdx) {
       <label class="arv-label">Valittavat vaihtoehdot — yksi riviä kohden: <code>pisteet ; kuvaus</code> (tyhjä = numerokenttä)</label>
       <textarea id="m-vo-${id}" class="kaava-textarea" style="font-family:inherit;min-height:80px" placeholder="1 ; Magneetti pysyy kaiken aikaa hevosenkengän sisällä&#10;0,5 ; Magneetti pysyy osittain sisällä&#10;0 ; Magneetti ei pysy sisällä">${esc(vaihtoehdotTekstiksi(t.vaihtoehdot))}</textarea>
     </div>
+    ${kohde === 'osatehtava' ? sarjaValinnatHTML(`m-sarjat-${id}`, t.sarjat) : ''}
   `;
   const parentEl = targetItem.closest(".tehtava-item, .osatehtava-item");
   if (parentEl) parentEl.parentElement.insertAdjacentElement("afterend", row);
@@ -356,7 +367,7 @@ async function tallennaMuokkaus(kohde, id, idx, osaIdx) {
 
   const body = kohde === 'tehtava'
     ? { rasti_id: rastiId, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot, keskiyo }
-    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot, keskiyo };
+    : { tehtava_id: tehtavat[idx].id, nimi, tyyppi, max_pisteet, kaava, ohje, vaihtoehdot, keskiyo, sarjat: valitutSarjat(`m-sarjat-${id}`) };
   const url = kohde === 'tehtava' ? `/api/tehtava/${id}` : `/api/osatehtava/${id}`;
   const res = await fetch(url, { method:"PUT", headers:adminHeaders(), body:JSON.stringify(body) });
   if (!res.ok) { const e = await res.json().catch(() => ({})); alert("Tallennus epäonnistui: " + JSON.stringify(e.detail || res.status)); return; }
@@ -478,6 +489,40 @@ async function tallennaSyoteVaihtoehdot(syoteId) {
   await paivitaSyoteEditori();
 }
 
+// ── Sarjarajaus: kohta näytetään vain valituille sarjoille ─────────────────
+
+function sarjaMerkki(x) {
+  if (!x.sarjat || !x.sarjat.length) return '';
+  const nimet = sarjat.filter(s => x.sarjat.includes(s.id)).map(s => s.nimi);
+  return `<span style="font-size:.78rem;color:#92400e;background:#fef3c7;border-radius:4px;padding:1px 6px" title="Näkyy pistesivulla vain näille sarjoille, muille 0 p">vain ${esc(nimet.join(", "))}</span>`;
+}
+
+function sarjaValinnatHTML(idPohja, valitut) {
+  if (!sarjat.length) return '';
+  return `<label class="arv-label">Näytä vain sarjoille (ei valintoja = kaikille). Muille sarjoille kohta ei näy ja lasketaan 0 p.</label>
+    <div id="${idPohja}" style="display:flex;gap:12px;flex-wrap:wrap;font-size:.85rem;margin-bottom:6px">
+      ${sarjat.map(s => `<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" value="${s.id}" ${(valitut || []).includes(s.id) ? 'checked' : ''}> ${esc(s.nimi)}</label>`).join('')}
+    </div>`;
+}
+
+// Valitut sarja-id:t; kaikki valittuina tarkoittaa samaa kuin ei rajausta
+function valitutSarjat(idPohja) {
+  const el = document.getElementById(idPohja);
+  if (!el) return null;
+  const valitut = [...el.querySelectorAll('input:checked')].map(i => parseInt(i.value));
+  return valitut.length === sarjat.length ? [] : valitut;
+}
+
+async function tallennaSyoteSarjat(syoteId) {
+  const panel = document.getElementById("syote-editori");
+  const t = haeKohde(panel.dataset.kohde, parseInt(panel.dataset.id));
+  const s = t.syotteet.find(x => x.id === syoteId);
+  const res = await fetch(`/api/syote/${syoteId}`, { method:"PUT", headers:adminHeaders(),
+    body:JSON.stringify({ nimi:s.nimi, kuvaus:s.kuvaus, tyyppi:s.tyyppi, vaihtoehdot:s.vaihtoehdot, sarjat:valitutSarjat(`syote-sarjat-valinta-${syoteId}`) }) });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.detail || "Tallennus epäonnistui"); return; }
+  await paivitaSyoteEditori();
+}
+
 // ── Kaava-tyypin syöte-editori ──────────────────────────────────────────────
 
 function avaaSyoteEditori(kohde, id) {
@@ -512,6 +557,8 @@ function renderSyoteEditori(panel, t) {
         <b>${s.nimi}</b>
         <span style="color:var(--muted)">${s.kuvaus || ''}</span>
         <span class="${tyyppiClass(s.tyyppi==='aika'?'ajanotto':'pisteet')}">${s.tyyppi==='aika'?'Aika':'Piste'}</span>
+        ${sarjaMerkki(s)}
+        <button class="btn btn-ghost btn-xs" onclick="document.getElementById('syote-sarjat-${s.id}').style.display='block'">Sarjat</button>
         ${s.tyyppi==='piste' ? `<button class="btn btn-ghost btn-xs" onclick="document.getElementById('syote-vo-${s.id}').style.display='block'">Vaihtoehdot (${s.vaihtoehdot.length})</button>` : ''}
         <button class="btn btn-danger btn-xs" onclick="poistaSyoteMaarite(${s.id})">✕</button>
       </div>
@@ -519,6 +566,10 @@ function renderSyoteEditori(panel, t) {
         <label class="arv-label">Vaihtoehdot — yksi riviä kohden: <code>pisteet ; kuvaus</code> (tyhjä = numerokenttä)</label>
         <textarea id="syote-vo-teksti-${s.id}" class="kaava-textarea" style="font-family:inherit;min-height:70px" placeholder="0,25 ; Suorituspaikka siivottu täysin&#10;0 ; Suorituspaikka siivoamatta">${esc(vaihtoehdotTekstiksi(s.vaihtoehdot))}</textarea>
         <button class="btn btn-success btn-xs" onclick="tallennaSyoteVaihtoehdot(${s.id})">Tallenna vaihtoehdot</button>
+      </div>
+      <div id="syote-sarjat-${s.id}" style="display:none;margin:0 0 8px">
+        ${sarjaValinnatHTML(`syote-sarjat-valinta-${s.id}`, s.sarjat)}
+        <button class="btn btn-success btn-xs" onclick="tallennaSyoteSarjat(${s.id})">Tallenna sarjat</button>
       </div>`;
   });
   html += `

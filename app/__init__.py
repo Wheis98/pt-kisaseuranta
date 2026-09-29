@@ -377,6 +377,15 @@ for _taulu in ("tehtavat", "osatehtavat"):
     except Exception:
         pass
 
+# Migraatio: sarjarajaus osatehtäville ja kaavan syötteille — JSON-lista sarja-id:istä, NULL = kaikki sarjat.
+# Rajatun sarjan vartiolle kohta ei näy pistesivulla ja se lasketaan nollaksi.
+for _taulu in ("osatehtavat", "syotemaaritteet"):
+    try:
+        db.execute(f"ALTER TABLE {_taulu} ADD COLUMN sarjat TEXT")
+        db.commit()
+    except Exception:
+        pass
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -468,6 +477,7 @@ class OsatehtavaIn(BaseModel):
     ohje: str | None = None
     vaihtoehdot: list[Vaihtoehto] | None = None
     keskiyo: bool = False
+    sarjat: list[int] | None = None  # näytetään vain näille sarjoille; [] = kaikki, None = ei muuteta (PUT)
 
 
 class SyoteMaariteIn(BaseModel):
@@ -475,6 +485,7 @@ class SyoteMaariteIn(BaseModel):
     kuvaus: str = ""
     tyyppi: str  # 'aika' | 'piste'
     vaihtoehdot: list[Vaihtoehto] | None = None  # piste-syötteen valittavat vaihtoehdot
+    sarjat: list[int] | None = None  # näytetään vain näille sarjoille; [] = kaikki, None = ei muuteta (PUT)
 
 
 class KaavaTestIn(BaseModel):
