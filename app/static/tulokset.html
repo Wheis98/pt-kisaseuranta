@@ -212,7 +212,9 @@ function valitseSarja(sarja) {
     const btn = document.createElement("button");
     btn.className = "vartio-btn";
     btn.dataset.vartio = v.vartio;
-    btn.textContent = `${i + 1}. ${v.vartio} — ${v.yhteensa} p`;
+    // Tulosryhmässä voi olla eri reittejä kiertäviä sarjoja (esim. Harmaa A ja B) — näytetään vartion oma sarja
+    const reitti = v.oma_sarja && v.oma_sarja !== v.sarja ? ` (${v.oma_sarja})` : "";
+    btn.textContent = `${i + 1}. ${v.vartio}${reitti} — ${v.yhteensa} p`;
     btn.onclick = () => naytaVartio(v.vartio);
     vartioLista.appendChild(btn);
   });

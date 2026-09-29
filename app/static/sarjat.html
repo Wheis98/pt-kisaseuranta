@@ -46,6 +46,12 @@
         <li>Paina <strong>✕ Poista reitiltä</strong> jos sarja ei käy kyseisellä rastilla — leimaus onnistuu silti, mutta rasti ei vaikuta sarjan "Tulossa"-ennusteeseen.</li>
         <li>Jos sarjalle ei ole asetettu yhtään rastia reitille, käytetään rastien yleistä oletusjärjestystä.</li>
       </ul>
+      <h3>Saman sarjan eri reitit (esim. Harmaa A ja Harmaa B)</h3>
+      <ul>
+        <li>Tee kummallekin reitille oma sarja (Harmaa A, Harmaa B), määritä niiden reitit ja siirrä vartiot niihin vartiosivulla.</li>
+        <li>Valitse sarjalle <strong>Tulokset yhdessä sarjan kanssa</strong> → Harmaa. Tulossivulla A:n ja B:n vartiot ovat silloin samassa Harmaan tulosluettelossa, ja kaavojen vertailut (paras/huonoin, mediaani) sekä ajanoton nopein ja hitain aika lasketaan niiden kaikkien kesken.</li>
+        <li>Sarjakohtaiset rajaukset (esim. syöte vain tietyille sarjoille) katsotaan vartion omasta sarjasta, joten rajaa ne erikseen myös sarjoille A ja B.</li>
+      </ul>
     </div>
   </div>
 </div>
@@ -66,6 +72,15 @@
   <div class="card">
     <div class="card-title">Sarjat</div>
     <div id="sarja-lista" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+
+  <div class="card" id="tulossarja-osio" style="display:none">
+    <div class="card-title">Tulokset yhdessä sarjan kanssa</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <select id="tulossarja" onchange="tallennaTulossarja()" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;min-width:220px"></select>
+      <span id="tulossarja-ohje" style="font-size:.82rem;color:var(--muted)"></span>
+    </div>
+    <div id="tulossarja-virhe" class="msg msg-error" style="display:none;margin-top:8px"></div>
   </div>
 
   <div class="card" id="reitti-osio" style="display:none">
@@ -105,7 +120,8 @@ function renderSarjaLista() {
   sarjat.forEach(s => {
     const chip = document.createElement("div");
     chip.className = "sarja-chip" + (s.id === valittuId ? " active" : "");
-    chip.innerHTML = `<span onclick="valitseSarja(${s.id})">${s.nimi}</span> <button onclick="event.stopPropagation();poistaSarja(${s.id})" title="Poista sarja">✕</button>`;
+    const ryhma = sarjat.find(x => x.id === s.tulossarja_id);
+    chip.innerHTML = `<span onclick="valitseSarja(${s.id})">${s.nimi}${ryhma ? ` <small style="font-weight:400;color:var(--muted)">→ tulokset: ${ryhma.nimi}</small>` : ''}</span> <button onclick="event.stopPropagation();poistaSarja(${s.id})" title="Poista sarja">✕</button>`;
     div.appendChild(chip);
   });
 }
@@ -135,6 +151,7 @@ function valitseSarja(id) {
 }
 
 function naytaReittiOsiot(nayta) {
+  document.getElementById("tulossarja-osio").style.display = nayta ? "block" : "none";
   document.getElementById("reitti-osio").style.display = nayta ? "block" : "none";
   document.getElementById("puuttuu-osio").style.display = nayta ? "block" : "none";
 }
@@ -147,7 +164,35 @@ async function lataaReitti() {
   const sarja = sarjat.find(s => s.id === valittuId);
   document.getElementById("reitti-otsikko").textContent = "Sarjan reitti — " + (sarja ? sarja.nimi : "");
   naytaReittiOsiot(true);
+  renderTulossarja();
   renderReitti();
+}
+
+// Tulossarjaksi kelpaa sarja, jota ei ole itse liitetty toiseen (vain yksi taso: A ja B -> Harmaa)
+function renderTulossarja() {
+  const sarja = sarjat.find(s => s.id === valittuId);
+  const sel = document.getElementById("tulossarja");
+  const liitetyt = sarjat.filter(s => s.tulossarja_id === valittuId).map(s => s.nimi);
+  document.getElementById("tulossarja-virhe").style.display = "none";
+  sel.innerHTML = `<option value="">— oma tulosluettelo —</option>` + sarjat
+    .filter(s => s.id !== valittuId && s.tulossarja_id == null)
+    .map(s => `<option value="${s.id}" ${sarja.tulossarja_id === s.id ? 'selected' : ''}>${s.nimi}</option>`).join('');
+  sel.disabled = liitetyt.length > 0;
+  document.getElementById("tulossarja-ohje").textContent = liitetyt.length
+    ? `Tähän sarjaan on liitetty: ${liitetyt.join(", ")} — niiden tulokset lasketaan yhdessä tämän kanssa.`
+    : "Eri reitti, yhteiset tulokset ja vertailut valitun sarjan kanssa.";
+}
+
+async function tallennaTulossarja() {
+  const arvo = document.getElementById("tulossarja").value;
+  const res = await fetch(`/api/sarja/${valittuId}/tulossarja`, { method:"PUT", headers:adminHeaders(),
+    body: JSON.stringify({ tulossarja_id: arvo ? parseInt(arvo) : null }) });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    const el = document.getElementById("tulossarja-virhe");
+    el.textContent = e.detail || "Tallennus epäonnistui"; el.style.display = "flex";
+  }
+  await lataaSarjat();
 }
 
 function renderReitti() {

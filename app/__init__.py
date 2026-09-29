@@ -386,6 +386,14 @@ for _taulu in ("osatehtavat", "syotemaaritteet"):
     except Exception:
         pass
 
+# Migraatio: sarjan tulokset voidaan laskea yhdessä toisen sarjan kanssa (esim. Harmaa A ja Harmaa B kiertävät
+# eri reitit, mutta tulokset ja kaavojen vertailut ovat yhteiset Harmaan kanssa). NULL = oma tulosryhmä.
+try:
+    db.execute("ALTER TABLE sarjat ADD COLUMN tulossarja_id INTEGER")
+    db.commit()
+except Exception:
+    pass
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -534,6 +542,10 @@ class RastiJarjestysIn(BaseModel):
 
 class SarjaIn(BaseModel):
     nimi: str
+
+
+class SarjaTulossarjaIn(BaseModel):
+    tulossarja_id: int | None = None  # sarja, jonka kanssa tulokset lasketaan yhdessä; None = oma tulosryhmä
 
 
 class SarjaRastitIn(BaseModel):

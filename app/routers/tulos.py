@@ -196,8 +196,9 @@ def get_tulokset_vartio(vartio: str, x_admin_token: str = Header(None)):
     return _vartio_tulokset(vartio, _ajanoton_rajat(), {})
 
 def _ajanoton_rajat() -> dict:
-    # Nopein ja hitain aika jokaiselle ajanotto-tehtävälle sarjoittain: (tyyppi, id, sarja) -> (min, max)
+    # Nopein ja hitain aika jokaiselle ajanotto-tehtävälle tulosryhmittäin: (tyyppi, id, ryhmä) -> (min, max)
     rajat: dict = {}
+    ryhmat = _tulosryhmat()
     for tyyppi, taulu, tulostaulu, sarake in (("t", "tehtavat", "tehtava_tulokset", "tehtava_id"),
                                               ("o", "osatehtavat", "osatehtava_tulokset", "osatehtava_id")):
         rows = db.execute(f"""
@@ -209,19 +210,37 @@ def _ajanoton_rajat() -> dict:
             WHERE x.tyyppi = 'ajanotto' AND tu.aika_sekuntia IS NOT NULL
         """).fetchall()
         for r in rows:
-            avain = (tyyppi, r["id"], r["sarja"] or "")
+            avain = (tyyppi, r["id"], ryhmat.get(r["sarja"] or "", r["sarja"] or ""))
             lo, hi = rajat.get(avain, (r["aika"], r["aika"]))
             rajat[avain] = (min(lo, r["aika"]), max(hi, r["aika"]))
     return rajat
 
-def _interpoloi_pisteet(rivi: dict, tyyppi: str, sarja: str, rajat: dict) -> None:
+def _interpoloi_pisteet(rivi: dict, tyyppi: str, ryhma: str, rajat: dict) -> None:
     # Ajanotto-tehtävän pisteet suoraviivaisesti sarjan nopeimman (max pistettä) ja hitaimman (0 p) ajan välillä.
     # Jos vain yksi aika tai kaikki samat, saa maksimin. Ilman max-pisteitä tai aikaa jää syötetty arvo.
     if rivi["tyyppi"] != "ajanotto" or rivi["aika_sekuntia"] is None or rivi["max_pisteet"] is None:
         return
-    lo, hi = rajat[(tyyppi, rivi["id"], sarja)]
+    lo, hi = rajat[(tyyppi, rivi["id"], ryhma)]
     osuus = 0 if hi == lo else (rivi["aika_sekuntia"] - lo) / (hi - lo)
     rivi["pisteet"] = round(rivi["max_pisteet"] * (1 - osuus), 2)
+
+def _tulosryhmat(cache: dict | None = None) -> dict:
+    # Sarjan nimi -> tulosryhmän nimi. Sarja, jolle on asetettu tulossarja (esim. Harmaa A -> Harmaa), lasketaan
+    # tuloksissa ja kaavojen vertailuissa yhdessä sen kanssa; muut muodostavat oman ryhmänsä.
+    if cache is not None and "tulosryhmat" in cache:
+        return cache["tulosryhmat"]
+    ryhmat = {r["nimi"]: r["ryhma"] for r in db.execute(
+        "SELECT s.nimi, COALESCE(p.nimi, s.nimi) AS ryhma FROM sarjat s LEFT JOIN sarjat p ON p.id = s.tulossarja_id")}
+    if cache is not None:
+        cache["tulosryhmat"] = ryhmat
+    return ryhmat
+
+def _tulosryhma(sarja: str, cache: dict | None = None) -> str:
+    return _tulosryhmat(cache).get(sarja, sarja)
+
+def _ryhman_sarjat(ryhma: str, cache: dict | None = None) -> list:
+    # Tulosryhmän kaikki sarjat (vartioiden sarja-kentän arvot), vähintään ryhmä itse
+    return sorted({ryhma} | {s for s, r in _tulosryhmat(cache).items() if r == ryhma})
 
 def _sarja_id(sarja: str):
     rivi = db.execute("SELECT id FROM sarjat WHERE nimi=?", (sarja,)).fetchone()
@@ -265,21 +284,22 @@ def _kaavan_omat_arvot(suoritus_id: int, taso: str, kohde_id: int, sarja: str, c
     """, (suoritus_id, taso, kohde_id)).fetchall()
     return _taydenna_piilotetut({r["nimi"]: r["arvo"] for r in rows}, _syoterajaus(taso, kohde_id, sarja, cache)[0])
 
-def _kaavan_kaikki_muuttujat(sarja: str, taso: str, kohde_id: int) -> list:
-    # Kaikkien saman sarjan vartioiden syöte-dictit tälle kohteelle — kaikki()-funktiota varten kaavassa
-    rows = db.execute("""
-        SELECT s.id AS suoritus_id, sm.nimi, sa.arvo
+def _kaavan_kaikki_muuttujat(sarja: str, taso: str, kohde_id: int, cache: dict | None = None) -> list:
+    # Kaikkien saman tulosryhmän vartioiden syöte-dictit tälle kohteelle — kaikki()-funktiota varten kaavassa.
+    # Piilotetut syötteet täydennetään kunkin vartion oman sarjan rajauksen mukaan.
+    sarjat = _ryhman_sarjat(_tulosryhma(sarja, cache), cache)
+    rows = db.execute(f"""
+        SELECT s.id AS suoritus_id, COALESCE(v.sarja,'') AS sarja, sm.nimi, sa.arvo
         FROM syote_arvot sa
         JOIN syotemaaritteet sm ON sm.id = sa.syotemaarite_id
         JOIN suoritukset s ON s.id = sa.suoritus_id
         JOIN vartiot v ON v.nimi = s.vartio
-        WHERE sm.taso=? AND sm.kohde_id=? AND COALESCE(v.sarja,'')=?
-    """, (taso, kohde_id, sarja)).fetchall()
+        WHERE sm.taso=? AND sm.kohde_id=? AND COALESCE(v.sarja,'') IN ({",".join("?" * len(sarjat))})
+    """, (taso, kohde_id, *sarjat)).fetchall()
     per_suoritus: dict = {}
     for r in rows:
-        per_suoritus.setdefault(r["suoritus_id"], {})[r["nimi"]] = r["arvo"]
-    piilotetut = _syoterajaus(taso, kohde_id, sarja)[0]
-    return [_taydenna_piilotetut(m, piilotetut) for m in per_suoritus.values()]
+        per_suoritus.setdefault(r["suoritus_id"], (r["sarja"], {}))[1][r["nimi"]] = r["arvo"]
+    return [_taydenna_piilotetut(m, _syoterajaus(taso, kohde_id, oma, cache)[0]) for oma, m in per_suoritus.values()]
 
 def _laske_kaava_pisteet(rivi: dict, taso: str, kohde_id: int, suoritus_id: int, sarja: str, kaikki_cache: dict) -> None:
     # Kaava-tyypin pisteet lasketaan aina tuoreena syöte-arvoista, koska muiden vartioiden arvot
@@ -292,9 +312,9 @@ def _laske_kaava_pisteet(rivi: dict, taso: str, kohde_id: int, suoritus_id: int,
     if not muuttujat:
         rivi["pisteet"] = None
         return
-    key = (taso, kohde_id, sarja)
+    key = (taso, kohde_id, _tulosryhma(sarja, kaikki_cache))
     if key not in kaikki_cache:
-        kaikki_cache[key] = _kaavan_kaikki_muuttujat(sarja, taso, kohde_id)
+        kaikki_cache[key] = _kaavan_kaikki_muuttujat(sarja, taso, kohde_id, kaikki_cache)
     try:
         tarkka = float(evaluoi(kaava, muuttujat, kaikki_cache[key]))
     except KaavaVirhe:
@@ -317,7 +337,7 @@ def _hae_osat(suoritus_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki
         # Piilotettu osatehtävä tai kaava-osatehtävä, jonka kaikki syötteet on piilotettu, on tälle sarjalle 0 p
         o["_piilossa"] = _piilossa(o.pop("sarjat"), sarja) or (
             o["tyyppi"] == "kaava" and _syoterajaus("osatehtava", o["id"], sarja, kaikki_cache)[1])
-        _interpoloi_pisteet(o, "o", sarja, rajat)
+        _interpoloi_pisteet(o, "o", _tulosryhma(sarja, kaikki_cache), rajat)
         _laske_kaava_pisteet(o, "osatehtava", o["id"], suoritus_id, sarja, kaikki_cache)
     return osat
 
@@ -346,14 +366,16 @@ def _osien_muuttujat(osat: list, suoritus_id: int) -> dict:
     return _taydenna_piilotetut(m, piilotetut)  # sarjalta piilotettu osatehtävä = 0 p
 
 def _osakaavan_kaikki(rasti_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki_cache: dict) -> list:
-    # Saman sarjan kaikkien vartioiden osatehtävämuuttujat tälle tehtävälle — kaikki()/.o1 -joukkoja varten
-    key = ("osat", tehtava_id, sarja)
+    # Saman tulosryhmän kaikkien vartioiden osatehtävämuuttujat tälle tehtävälle — kaikki()/.o1 -joukkoja varten
+    ryhma = _tulosryhma(sarja, kaikki_cache)
+    key = ("osat", tehtava_id, ryhma)
     if key not in kaikki_cache:
-        rows = db.execute("""
-            SELECT s.id FROM suoritukset s JOIN vartiot v ON v.nimi = s.vartio
-            WHERE s.rasti_id=? AND COALESCE(v.sarja,'')=?
-        """, (rasti_id, sarja)).fetchall()
-        kaikki = [_osien_muuttujat(_hae_osat(r["id"], tehtava_id, sarja, rajat, kaikki_cache), r["id"]) for r in rows]
+        sarjat = _ryhman_sarjat(ryhma, kaikki_cache)
+        rows = db.execute(f"""
+            SELECT s.id, COALESCE(v.sarja,'') AS sarja FROM suoritukset s JOIN vartiot v ON v.nimi = s.vartio
+            WHERE s.rasti_id=? AND COALESCE(v.sarja,'') IN ({",".join("?" * len(sarjat))})
+        """, (rasti_id, *sarjat)).fetchall()
+        kaikki = [_osien_muuttujat(_hae_osat(r["id"], tehtava_id, r["sarja"], rajat, kaikki_cache), r["id"]) for r in rows]
         kaikki_cache[key] = [m for m in kaikki if m]
     return kaikki_cache[key]
 
@@ -395,7 +417,7 @@ def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
             if td["osatehtavat"] and td["tyyppi"] == "kaava":
                 _laske_osakaava(td, s["rasti_id"], s["id"], sarja, rajat, kaikki_cache)
             else:
-                _interpoloi_pisteet(td, "t", sarja, rajat)
+                _interpoloi_pisteet(td, "t", _tulosryhma(sarja, kaikki_cache), rajat)
                 _laske_kaava_pisteet(td, "tehtava", t["id"], s["id"], sarja, kaikki_cache)
             # Pyöristämätön apuarvo ja sarjalta piilotetut osatehtävät eivät kuulu vastaukseen
             td.pop("_tarkka", None)
@@ -412,7 +434,8 @@ def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
         })
     return {
         "vartio": vartio,
-        "sarja": vrow["sarja"] if vrow else "",
+        "sarja": _tulosryhma(sarja, kaikki_cache),  # tulosryhmä: tulokset järjestetään tämän mukaan
+        "oma_sarja": sarja,                          # vartion oma sarja (reitti), esim. Harmaa A
         "numero": vrow["numero"] if vrow else "",
         "rastit": rasti_data,
     }

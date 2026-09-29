@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import FileResponse
 import sqlite3
-from app import db, SarjaIn, SarjaRastitIn, STATIC_DIR
+from app import db, SarjaIn, SarjaRastitIn, SarjaTulossarjaIn, STATIC_DIR
 from app.utils import vaadi_admin
 
 router = APIRouter()
@@ -13,7 +13,7 @@ def sarjat_page():
 @router.get("/api/sarjat")
 def get_sarjat():
     # Palauttaa kaikki sarjat aakkosjärjestyksessä
-    rows = db.execute("SELECT id, nimi FROM sarjat ORDER BY nimi").fetchall()
+    rows = db.execute("SELECT id, nimi, tulossarja_id FROM sarjat ORDER BY nimi").fetchall()
     return [dict(r) for r in rows]
 
 @router.post("/api/sarja")
@@ -48,7 +48,29 @@ def delete_sarja(sarja_id: int, x_admin_token: str = Header(None)):
     vaadi_admin(x_admin_token)
     db.execute("DELETE FROM sarja_rastit WHERE sarja_id=?", (sarja_id,))
     db.execute("DELETE FROM lahto_sarjat WHERE sarja_id=?", (sarja_id,))
+    db.execute("UPDATE sarjat SET tulossarja_id=NULL WHERE tulossarja_id=?", (sarja_id,))
     db.execute("DELETE FROM sarjat WHERE id=?", (sarja_id,))
+    db.commit()
+    return {"ok": True}
+
+@router.put("/api/sarja/{sarja_id}/tulossarja")
+def aseta_tulossarja(sarja_id: int, data: SarjaTulossarjaIn, x_admin_token: str = Header(None)):
+    # Asettaa sarjan tulokset laskettavaksi yhdessä toisen sarjan kanssa (vain yksi taso: A ja B -> Harmaa)
+    vaadi_admin(x_admin_token)
+    if not db.execute("SELECT 1 FROM sarjat WHERE id=?", (sarja_id,)).fetchone():
+        raise HTTPException(status_code=404, detail="Sarjaa ei löydy")
+    kohde = data.tulossarja_id
+    if kohde is not None:
+        rivi = db.execute("SELECT tulossarja_id FROM sarjat WHERE id=?", (kohde,)).fetchone()
+        if not rivi:
+            raise HTTPException(status_code=404, detail="Tulossarjaa ei löydy")
+        if kohde == sarja_id:
+            raise HTTPException(status_code=400, detail="Sarja ei voi olla oma tulossarjansa")
+        if rivi["tulossarja_id"] is not None:
+            raise HTTPException(status_code=400, detail="Valittu sarja on itse liitetty toiseen tulossarjaan")
+        if db.execute("SELECT 1 FROM sarjat WHERE tulossarja_id=?", (sarja_id,)).fetchone():
+            raise HTTPException(status_code=400, detail="Tähän sarjaan on liitetty muita sarjoja, joten sitä ei voi liittää toiseen")
+    db.execute("UPDATE sarjat SET tulossarja_id=? WHERE id=?", (kohde, sarja_id))
     db.commit()
     return {"ok": True}
 
