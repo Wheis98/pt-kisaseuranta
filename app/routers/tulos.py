@@ -259,9 +259,12 @@ def _laske_kaava_pisteet(rivi: dict, taso: str, kohde_id: int, suoritus_id: int,
     if key not in kaikki_cache:
         kaikki_cache[key] = _kaavan_kaikki_muuttujat(sarja, taso, kohde_id)
     try:
-        rivi["pisteet"] = round(float(evaluoi(kaava, muuttujat, kaikki_cache[key])), 2)
+        tarkka = float(evaluoi(kaava, muuttujat, kaikki_cache[key]))
     except KaavaVirhe:
         rivi["pisteet"] = None
+        return
+    rivi["pisteet"] = round(tarkka, 2)
+    rivi["_tarkka"] = tarkka  # tehtävän kaavaan pyöristämättömänä kuten vanhassa Kipassa, ei näytetä
 
 def _hae_osat(suoritus_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki_cache: dict) -> list:
     # Tehtävän osatehtävät tämän suorituksen tuloksineen, ajanotto-interpolointi ja kaavat laskettuina
@@ -281,7 +284,7 @@ def _hae_osat(suoritus_id: int, tehtava_id: int, sarja: str, rajat: dict, kaikki
 def _osan_pisteet(o: dict):
     if o["tyyppi"] == "oikein_vaarin" and o["oikein"] is not None:
         return (o["max_pisteet"] if o["max_pisteet"] is not None else 1) if o["oikein"] else 0
-    return o["pisteet"]
+    return o.get("_tarkka", o["pisteet"])
 
 def _osien_muuttujat(osat: list, suoritus_id: int) -> dict:
     # Tehtävän kaavan muuttujat osatehtävistä: osatehtävän oma kirjain (a, b, c...) = pisteet ja a_aika = ajanoton
@@ -350,6 +353,10 @@ def _vartio_tulokset(vartio: str, rajat: dict, kaikki_cache: dict) -> dict:
             else:
                 _interpoloi_pisteet(td, "t", sarja, rajat)
                 _laske_kaava_pisteet(td, "tehtava", t["id"], s["id"], sarja, kaikki_cache)
+            # Pyöristämätön apuarvo ei kuulu vastaukseen
+            td.pop("_tarkka", None)
+            for o in td["osatehtavat"]:
+                o.pop("_tarkka", None)
             tehtavat_data.append(td)
         rasti_data.append({
             "suoritus_id": s["id"],

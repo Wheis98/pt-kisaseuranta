@@ -45,6 +45,10 @@ def _vartioittain(funktio):
 
 def _minmax(funktio):
     def f(*args):
+        # Kuten vanhassa Kipassa: max(.a, .b) on vartiokohtainen (jokaiselle vartiolle oma suurin),
+        # max(.a) tai max([x, y]) taas koko joukon suurin
+        if len(args) > 1 and any(isinstance(a, _Joukko) for a in args):
+            return _vartioittain(lambda *x: funktio(_flat(x)))(*args)
         arvot = _flat(args)
         if not arvot:
             raise KaavaVirhe("Ei arvoja laskettavaksi")
