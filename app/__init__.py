@@ -29,7 +29,11 @@ class _Tietokanta:
 
 # Yhdistetään SQLite-tietokantaan.
 # KIPA_DB-ympäristömuuttujalla voi käyttää toista tietokantaa (esim. testaukseen).
-db = _Tietokanta(os.environ.get("KIPA_DB") or BASE_DIR.parent / "kipa.db")
+# Oletuksena kanta on projektin data-kansiossa (data/kipa.db).
+_DB_POLKU = os.environ.get("KIPA_DB") or BASE_DIR.parent / "data" / "kipa.db"
+if str(_DB_POLKU) != ":memory:":
+    Path(_DB_POLKU).parent.mkdir(parents=True, exist_ok=True)
+db = _Tietokanta(_DB_POLKU)
 
 # Luodaan taulut jos niitä ei vielä ole
 db.executescript("""

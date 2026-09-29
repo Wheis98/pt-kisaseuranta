@@ -1,0 +1,6 @@
+
+Vartio haetaan manuaalisesti vartion numerolla
+
+Tulokset printataan sarjoittain
+
+Poista käyttäjältä vartion manuaalinen luominen

@@ -1,6 +1,6 @@
 """Täyttää testitietokannan (kipa-testi.db) esimerkkirasteilla, -tehtävillä ja -vartioilla.
 
-Käyttö:  python seed_testi.py
+Käyttö:  python scripts/seed_testi.py
 Ei koskaan kirjoita kipa.db:hen. Ajo on idempotentti: jos rasteja on jo, ei lisätä mitään.
 """
 import os
@@ -8,8 +8,10 @@ import sys
 import uuid
 from pathlib import Path
 
-testikanta = Path(__file__).resolve().parent / "kipa-testi.db"
+PROJEKTI = Path(__file__).resolve().parent.parent
+testikanta = PROJEKTI / "data" / "kipa-testi.db"
 os.environ["KIPA_DB"] = str(testikanta)
+sys.path.insert(0, str(PROJEKTI))  # app-paketti löytyy, vaikka skripti on scripts-kansiossa
 
 from app import db  # noqa: E402  (KIPA_DB pitää olla asetettu ennen importtia)
 
@@ -85,7 +87,7 @@ VARTIOT = [
 ]
 
 if db.execute("SELECT COUNT(*) FROM rastit WHERE numero IN (%s)" % ",".join("?" * len(RASTIT)), tuple(RASTIT)).fetchone()[0]:
-    sys.exit("Seed-rasteja (1-5) on jo testikannassa — aja .\\testi.ps1 -Nollaa jos haluat aloittaa alusta")
+    sys.exit("Seed-rasteja (1-5) on jo testikannassa — aja .\\scripts\\testi.ps1 -Nollaa jos haluat aloittaa alusta")
 
 # Lisätään olemassa olevan datan jatkoksi, ei korvata sitä
 alku_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM rastit").fetchone()[0]

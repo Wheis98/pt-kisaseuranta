@@ -4,6 +4,19 @@ Reaaliaikainen rastihenkilöiden leimaussovellus partiotapahtumiin.
 
 ---
 
+## Kansiot
+
+| Kansio | Sisältö |
+|---|---|
+| `app/` | Sovelluksen koodi (FastAPI) ja sivut (`app/static/`) |
+| `data/` | Tietokannat `kipa.db` ja `kipa-testi.db` — eivät ole gitissä |
+| `data/varmuuskopiot/` | Tietokantojen varmuuskopiot |
+| `docs/` | Palvelimen käyttöohjeet (`palvelin-ohjeet.md`) ja muistiinpanot |
+| `scripts/` | Testitilan käynnistys (`testi.ps1`) ja testidatan luonti (`seed_testi.py`) |
+| `tupa/` | Vanhan Kipan koodi vertailua varten — ei ole gitissä |
+
+Palvelimella sovellus ajetaan Docker-kontissa Traefikin takana, ks. [docs/palvelin-ohjeet.md](docs/palvelin-ohjeet.md) ja `Dockerfile`.
+
 ## Käynnistysohjeet
 
 9. Varmista että Python on asennettuna (`python --version`)
@@ -30,11 +43,12 @@ Reaaliaikainen rastihenkilöiden leimaussovellus partiotapahtumiin.
 
 ## Testaus erillisellä tietokannalla
 
-Testivartioita ja -leimauksia varten on oma tietokanta `kipa-testi.db`, jotta oikea `kipa.db` ei muutu:
+Testivartioita ja -leimauksia varten on oma tietokanta `data/kipa-testi.db`, jotta oikea `data/kipa.db` ei muutu:
 
 ```
-.\testi.ps1            # käynnistää portissa 8001
-.\testi.ps1 -Nollaa    # poistaa testidatan ja aloittaa puhtaalta pöydältä
+.\scripts\testi.ps1            # käynnistää portissa 8001
+.\scripts\testi.ps1 -Nollaa    # poistaa testidatan ja aloittaa puhtaalta pöydältä
+python scripts\seed_testi.py    # täyttää testikannan esimerkkirasteilla ja -vartioilla
 ```
 
 Testitila luo admin-tunnukset ja vartiot alusta. Sama toimii käsin: aseta ympäristömuuttuja `KIPA_DB` tietokantatiedoston polkuun ennen uvicornin käynnistystä.

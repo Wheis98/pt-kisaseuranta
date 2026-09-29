@@ -185,7 +185,7 @@ pip install -r requirements.txt
 
 ### Tietokanta
 
-Sovellus käyttää SQLite-tiedostoa. Oletuspolku on projektin juuressa `kipa.db` (`BASE_DIR.parent / "kipa.db"`, ks. `app/__init__.py`), mutta polun voi ohittaa ympäristömuuttujalla:
+Sovellus käyttää SQLite-tiedostoa. Oletuspolku on projektin `data`-kansiossa `data/kipa.db` (ks. `app/__init__.py`), mutta polun voi ohittaa ympäristömuuttujalla:
 
 ```bash
 export KIPA_DB=/polku/omaan/kipa.db

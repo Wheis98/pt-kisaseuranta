@@ -1,4 +1,4 @@
-# pt-kisaseuranta Docker-kontissa (Traefikin takana, ks. palvelin-ohjeet.md)
+# pt-kisaseuranta Docker-kontissa (Traefikin takana, ks. docs/palvelin-ohjeet.md)
 FROM python:3.12-slim
 
 # Ajastin ja lähtöjen käynnistys ottavat ajan palvelimen kellosta, joten kontin pitää olla Suomen ajassa
