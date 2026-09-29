@@ -221,7 +221,7 @@ def _interpoloi_pisteet(rivi: dict, tyyppi: str, sarja: str, rajat: dict) -> Non
         return
     lo, hi = rajat[(tyyppi, rivi["id"], sarja)]
     osuus = 0 if hi == lo else (rivi["aika_sekuntia"] - lo) / (hi - lo)
-    rivi["pisteet"] = round(rivi["max_pisteet"] * (1 - osuus), 1)
+    rivi["pisteet"] = round(rivi["max_pisteet"] * (1 - osuus), 2)
 
 def _sarja_id(sarja: str):
     rivi = db.execute("SELECT id FROM sarjat WHERE nimi=?", (sarja,)).fetchone()

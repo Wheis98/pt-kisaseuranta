@@ -64,6 +64,9 @@ function sToAika(s) {
   return `${String(min).padStart(2,'0')}:${String(sek).padStart(2,'0')}`;
 }
 
+// Pisteiden summat kahden desimaalin tarkkuuteen (liukulukujen yhteenlasku tuottaa esim. 48.400000000000006)
+function p2(x) { return Math.round(x * 100) / 100; }
+
 function laskePisteet(t) {
   if (t.tyyppi === 'oikein_vaarin') {
     if (t.oikein === null || t.oikein === undefined) return null;
@@ -127,7 +130,7 @@ function naytaVartio(vartio) {
           // Tehtävän pisteet lasketaan tehtävän kaavasta osatehtävien tuloksilla (ei summata)
           osaSum = t.pisteet; osaHas = t.pisteet != null; osaMax = t.max_pisteet ?? 0;
         }
-        rowsHTML += `<div class="tehtava-row osa total-row" style="background:#f0f4ff"><span class="t-nimi">Yhteensä${t.osakaava?' (kaava)':''}</span><span class="t-score">${osaHas?osaSum+' p':'–'}</span><span class="t-max">${osaMax>0?'/ '+osaMax:''}</span></div>`;
+        rowsHTML += `<div class="tehtava-row osa total-row" style="background:#f0f4ff"><span class="t-nimi">Yhteensä${t.osakaava?' (kaava)':''}</span><span class="t-score">${osaHas?p2(osaSum)+' p':'–'}</span><span class="t-max">${osaMax>0?'/ '+p2(osaMax):''}</span></div>`;
         if (osaHas) { rastiTotal += osaSum; rastiHasAny = true; }
         if (osaMax > 0) rastiMax += osaMax;
       } else {
@@ -138,7 +141,7 @@ function naytaVartio(vartio) {
       }
     });
 
-    const rastiTotalStr = rastiHasAny ? `${rastiTotal} p${rastiMax>0?' / '+rastiMax+' p':''}` : '–';
+    const rastiTotalStr = rastiHasAny ? `${p2(rastiTotal)} p${rastiMax>0?' / '+p2(rastiMax)+' p':''}` : '–';
     block.innerHTML = `
       <div class="rasti-block-title"><span>Rasti ${r.rasti_numero}</span><span>${rastiTotalStr} · <a href="pisteet.html?admin=1&rasti_id=${r.rasti_id}&vartio=${encodeURIComponent(vartio)}" style="color:inherit;text-decoration:underline">Muokkaa</a></span></div>
       ${rowsHTML}
@@ -152,7 +155,7 @@ function naytaVartio(vartio) {
 
   const grand = document.createElement("div");
   grand.className = "grand-total";
-  grand.innerHTML = `<span>Kokonaistulos</span><span>${grandHasAny ? grandTotal+' p'+(grandMax>0?' / '+grandMax+' p':'') : '–'}</span>`;
+  grand.innerHTML = `<span>Kokonaistulos</span><span>${grandHasAny ? p2(grandTotal)+' p'+(grandMax>0?' / '+p2(grandMax)+' p':'') : '–'}</span>`;
   lista.appendChild(grand);
 }
 
@@ -195,7 +198,7 @@ function vartionPisteet(data) {
       sum += laskePisteet(t) ?? 0;
     }
   }));
-  return sum;
+  return p2(sum);
 }
 
 function valitseSarja(sarja) {

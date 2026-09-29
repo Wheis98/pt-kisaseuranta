@@ -205,7 +205,8 @@ function recomputeParentTotal(t) {
     if (score.pisteet !== null) { sum += score.pisteet; hasAny = true; }
     if (o.max_pisteet !== null) max += o.max_pisteet;
   });
-  el.textContent = hasAny ? `Yhteensä: ${sum} p${max>0?' / '+max+' p':''}` : 'Yhteensä: —';
+  const p2 = x => Math.round(x * 100) / 100;
+  el.textContent = hasAny ? `Yhteensä: ${p2(sum)} p${max>0?' / '+p2(max)+' p':''}` : 'Yhteensä: —';
 }
 
 // Kaava-tyypin syötekentistä koostettu {nimi: arvo} tai null jos mitään ei ole täytetty
