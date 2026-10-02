@@ -420,7 +420,8 @@ sessions: dict = {
 }
 
 # Admin-sessiot pidetään pelkästään muistissa — palvelimen uudelleenkäynnistys kirjaa adminit ulos
-admin_sessions: set = set()
+# Avain on session-token, arvo adminin käyttäjänimi (tarvitaan oman salasanan vaihdossa)
+admin_sessions: dict = {}
 
 
 # ── Pyyntömallit ──────────────────────────────────────────────────────────────
@@ -565,3 +566,8 @@ class SarjaRastitIn(BaseModel):
 class AdminIn(BaseModel):
     kayttajanimi: str
     salasana: str
+
+
+class AdminSalasanaIn(BaseModel):
+    nykyinen: str
+    uusi: str

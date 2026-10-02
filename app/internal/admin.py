@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import FileResponse
 import sqlite3
 import uuid
-from app import db, AdminIn, admin_sessions, sessions, STATIC_DIR
+from app import db, AdminIn, AdminSalasanaIn, admin_sessions, sessions, STATIC_DIR
 from app.utils import hash_salasana, vaadi_admin
 
 router = APIRouter()
@@ -39,8 +39,25 @@ def admin_login(a: AdminIn):
     if not row or row["salasana_hash"] != hash_salasana(a.salasana):
         raise HTTPException(status_code=401, detail="Väärä käyttäjänimi tai salasana")
     token = str(uuid.uuid4())
-    admin_sessions.add(token)
+    admin_sessions[token] = a.kayttajanimi.strip()
     return {"admin_token": token}
+
+@router.post("/api/admin/salasana")
+def vaihda_admin_salasana(a: AdminSalasanaIn, x_admin_token: str = Header(None)):
+    # Vaihtaa kirjautuneen adminin oman salasanan — nykyinen salasana vaaditaan, jotta auki jäänyt istunto ei riitä
+    vaadi_admin(x_admin_token)
+    kayttajanimi = admin_sessions[x_admin_token]
+    row = db.execute("SELECT salasana_hash FROM admins WHERE kayttajanimi=?", (kayttajanimi,)).fetchone()
+    if not row or row["salasana_hash"] != hash_salasana(a.nykyinen):
+        raise HTTPException(status_code=401, detail="Nykyinen salasana on väärä")
+    if not a.uusi:
+        raise HTTPException(status_code=400, detail="Uusi salasana vaaditaan")
+    db.execute("UPDATE admins SET salasana_hash=? WHERE kayttajanimi=?", (hash_salasana(a.uusi), kayttajanimi))
+    db.commit()
+    # Saman adminin muut istunnot (muut laitteet) kirjataan ulos; tämä istunto pysyy voimassa
+    for token in [t for t, k in admin_sessions.items() if k == kayttajanimi and t != x_admin_token]:
+        del admin_sessions[token]
+    return {"ok": True, "kayttajanimi": kayttajanimi}
 
 @router.post("/api/admin/luo")
 def luo_admin(a: AdminIn, x_admin_token: str = Header(None)):

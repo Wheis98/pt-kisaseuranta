@@ -43,6 +43,11 @@
       <ul>
         <li>Voit luoda useita admin-tunnuksia esim. eri kisanjohtajille.</li>
       </ul>
+      <h3>Vaihda oma salasana</h3>
+      <ul>
+        <li>Vaihtaa sen admin-tunnuksen salasanan, jolla olet kirjautunut. Nykyinen salasana kysytään varmistukseksi.</li>
+        <li>Muut laitteet, joilla sama tunnus on kirjautuneena, kirjataan ulos.</li>
+      </ul>
     </div>
   </div>
 </div>
@@ -183,6 +188,27 @@
       </div>
     </div>
 
+    <hr class="divider">
+
+    <div class="card">
+      <div class="card-title">Vaihda oma salasana</div>
+      <div id="salasana-virhe" class="msg msg-error" style="display:none"></div>
+      <div id="salasana-ok" class="msg msg-ok" style="display:none"></div>
+      <div class="field">
+        <label for="nykyinen-salasana">Nykyinen salasana</label>
+        <input type="password" id="nykyinen-salasana" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="uusi-oma-salasana">Uusi salasana</label>
+        <input type="password" id="uusi-oma-salasana" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="uusi-oma-salasana2">Uusi salasana uudelleen</label>
+        <input type="password" id="uusi-oma-salasana2" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary" onclick="vaihdaSalasana()">Vaihda salasana</button>
+    </div>
+
     <div class="link-group">
       <a class="nav-link" href="/">Etusivulle</a>
     </div>
@@ -239,6 +265,23 @@ async function luoAdmin() {
   if (!res.ok) { const e=await res.json(); virhe.textContent=e.detail; virhe.style.display="flex"; return; }
   okDiv.textContent="Admin-tunnus luotu!"; okDiv.style.display="flex";
   document.getElementById("uusi-kayttajanimi").value=""; document.getElementById("uusi-salasana").value="";
+}
+
+async function vaihdaSalasana() {
+  const nykyinen = document.getElementById("nykyinen-salasana").value;
+  const uusi = document.getElementById("uusi-oma-salasana").value;
+  const uusi2 = document.getElementById("uusi-oma-salasana2").value;
+  const virhe = document.getElementById("salasana-virhe");
+  const okDiv = document.getElementById("salasana-ok");
+  virhe.style.display="none"; okDiv.style.display="none";
+  if (!nykyinen||!uusi||!uusi2) { virhe.textContent="Täytä kaikki kentät."; virhe.style.display="flex"; return; }
+  if (uusi!==uusi2) { virhe.textContent="Uudet salasanat eivät täsmää."; virhe.style.display="flex"; return; }
+  const res = await fetch("/api/admin/salasana", { method:"POST", headers:{"Content-Type":"application/json","x-admin-token":localStorage.getItem("admin_token")}, body:JSON.stringify({nykyinen,uusi}) });
+  if (res.status === 403) { localStorage.removeItem("admin_token"); location.reload(); return; }
+  if (!res.ok) { const e=await res.json().catch(() => ({})); virhe.textContent=e.detail || "Salasanan vaihto epäonnistui."; virhe.style.display="flex"; return; }
+  const d = await res.json();
+  okDiv.textContent=`Tunnuksen "${d.kayttajanimi}" salasana vaihdettu.`; okDiv.style.display="flex";
+  ["nykyinen-salasana","uusi-oma-salasana","uusi-oma-salasana2"].forEach(id => document.getElementById(id).value="");
 }
 
 // Nimet tulevat käyttäjäpyynnöistä, joita kuka tahansa voi lähettää — näytetään aina tekstinä, ei HTML:nä
