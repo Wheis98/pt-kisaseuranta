@@ -452,6 +452,7 @@ class LeimausIn(BaseModel):
     aika: str
     tyyppi: str = "sisaan"
     uudelleen: bool = False  # True = toinen käynti samalla rastilla hyväksytty
+    pakota: bool = False     # True = vartio on vielä sisällä toisella rastilla: kirjataan sieltä ulos automaattisesti
 
 
 class LahtoIn(BaseModel):

@@ -344,6 +344,15 @@ async function paivitaAktiiviset() {
 }
 
 let uudelleenVartio=null;
+let uudelleenPakota=false;
+
+// Vartio on vielä sisällä toisella rastilla (409 "jo_rastilla:X"): kysytään, kirjataanko se sieltä ulos
+function vahvistaPakota(vartio, detail) {
+  const edellinen = detail.slice("jo_rastilla:".length);
+  return confirm(`${vartio} on vielä sisällä rastilla ${edellinen}.
+
+Leimataanko silti sisään tälle rastille? Vartio kirjataan samalla ulos rastilta ${edellinen}.`);
+}
 
 async function leimaaUlos(vartio, btn) {
   // Varmistus ennen ulosleimausta, ettei väärää vartiota leimata vahingossa ulos
@@ -400,7 +409,7 @@ async function tallennaLeimausUudelleen(vartio) {
   btn.disabled=true; btn.textContent="Tallennetaan…";
   try {
     const aika=document.getElementById("aika").value||aikaleima();
-    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan",uudelleen:true})});
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan",uudelleen:true,pakota:uudelleenPakota})});
     if(!res.ok){const e=await res.json();if(res.status===401){localStorage.clear();window.location.href="/";return;}throw new Error(e.detail);}
     setViesti("Tallennettu!","ok");
     document.getElementById("vartio").value=""; document.getElementById("aika").value="";
@@ -408,7 +417,7 @@ async function tallennaLeimausUudelleen(vartio) {
     document.getElementById("sisaan-kentat").style.display="none";
     await paivitaAktiiviset(); await paivitaTilanne();
   } catch(e){setViesti("Virhe: "+e.message,"error");}
-  finally{btn.disabled=false;btn.textContent="Tallenna leimaus"; uudelleenVartio=null;}
+  finally{btn.disabled=false;btn.textContent="Tallenna leimaus"; uudelleenVartio=null; uudelleenPakota=false;}
 }
 
 // ── QR ──
@@ -458,7 +467,7 @@ async function avaaQR() {
 }
 
 // ── Tallenna ──
-async function tallennaLeimaus() {
+async function tallennaLeimaus(pakota=false) {
   const vartio=vartionNimi(document.getElementById("vartio").value);
   const aika=document.getElementById("aika").value||aikaleima();
   setViesti("","");
@@ -466,12 +475,16 @@ async function tallennaLeimaus() {
   const btn=document.getElementById("tallenna-btn");
   btn.disabled=true; btn.textContent="Tallennetaan…";
   try {
-    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan"})});
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika,tyyppi:"sisaan",pakota})});
     if(!res.ok){
       const e=await res.json();
       if(res.status===401){localStorage.clear();window.location.href="/";return;}
+      if(res.status===409&&e.detail.startsWith("jo_rastilla:")){
+        if(vahvistaPakota(vartio,e.detail)){btn.disabled=false;return await tallennaLeimaus(true);}
+        return;
+      }
       if(res.status===409&&e.detail.startsWith("uudelleen_kaynti:")){
-        uudelleenVartio=vartio;
+        uudelleenVartio=vartio; uudelleenPakota=pakota;
         document.getElementById("uudelleen-teksti").textContent=`${vartio} on jo aiemmin käynyt tällä rastilla. Hyväksytäänkö uudelleen käynti?`;
         document.getElementById("uudelleen-modal").style.display="flex";
         return;
@@ -533,15 +546,19 @@ async function lisaaJonoon() {
   finally{btn.disabled=false;}
 }
 
-async function otaJonosta(vartio, btn, uudelleen=false) {
+async function otaJonosta(vartio, btn, uudelleen=false, pakota=false) {
   btn.disabled=true;
   try {
-    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"sisaan",uudelleen})});
+    const res=await fetch("/api/leimaus",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rastinumero,vartio,aika:aikaleima(),tyyppi:"sisaan",uudelleen,pakota})});
     if(!res.ok){
       const e=await res.json();
       if(res.status===401){localStorage.clear();window.location.href="/";return;}
+      if(res.status===409&&e.detail.startsWith("jo_rastilla:")){
+        if(vahvistaPakota(vartio,e.detail)) return await otaJonosta(vartio, btn, uudelleen, true);
+        btn.disabled=false; return;
+      }
       if(res.status===409&&e.detail.startsWith("uudelleen_kaynti:")){
-        if(confirm(`${vartio} on jo aiemmin käynyt tällä rastilla. Hyväksytäänkö uudelleen käynti?`)) return otaJonosta(vartio, btn, true);
+        if(confirm(`${vartio} on jo aiemmin käynyt tällä rastilla. Hyväksytäänkö uudelleen käynti?`)) return await otaJonosta(vartio, btn, true, pakota);
         btn.disabled=false; return;
       }
       throw new Error(e.detail);

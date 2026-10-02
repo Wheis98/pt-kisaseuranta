@@ -15,6 +15,10 @@ def vaadi_admin(x_admin_token: str = Header(None)):
 _mediaani_cache = {"aika": 0.0, "arvo": {}}
 _MEDIAANI_TTL_S = 30
 
+# Leimaajan nimen perään merkitään automaattinen uloskirjaus (vartio leimattiin sisään seuraavalle rastille
+# ilman ulosleimausta edelliseltä). Sen jälkeistä siirtymää ei käytetä siirtymäaikojen mediaaneissa.
+AUTOMAATTINEN_ULOS = " (automaattinen ulos)"
+
 def ryhman_rastit(numero: str) -> list:
     # Rastiryhmän kaikki rastit järjestyksessä (ensimmäinen on ryhmän edustaja, jonka leimaussivua käytetään).
     # Rasti, joka ei kuulu ryhmään, on oma "ryhmänsä": [numero].
@@ -51,7 +55,7 @@ def _laske_siirtyma_mediaanit():
             except: pass
         return None
 
-    kaikki = db.execute("SELECT vartio, numero, tyyppi, aika FROM leimaukset ORDER BY id").fetchall()
+    kaikki = db.execute("SELECT vartio, numero, tyyppi, aika, kayttaja FROM leimaukset ORDER BY id").fetchall()
     per_vartio: dict = {}
     for l in kaikki:
         per_vartio.setdefault(l["vartio"], []).append(l)
@@ -59,7 +63,7 @@ def _laske_siirtyma_mediaanit():
     for leimaukset in per_vartio.values():
         for i in range(len(leimaukset) - 1):
             curr, nxt = leimaukset[i], leimaukset[i + 1]
-            if curr["tyyppi"] == "ulos" and nxt["tyyppi"] == "sisaan":
+            if curr["tyyppi"] == "ulos" and nxt["tyyppi"] == "sisaan" and not (curr["kayttaja"] or "").endswith(AUTOMAATTINEN_ULOS):
                 t1, t2 = parse_aika(curr["aika"]), parse_aika(nxt["aika"])
                 if t1 and t2:
                     diff = (t2 - t1).total_seconds() / 60

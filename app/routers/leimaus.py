@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 from app import db, sessions, admin_sessions, LeimausIn, JonoIn, AjastinIn, STATIC_DIR
-from app.utils import vaadi_admin, ryhman_rastit
+from app.utils import vaadi_admin, ryhman_rastit, AUTOMAATTINEN_ULOS
 
 router = APIRouter()
 
@@ -41,13 +41,20 @@ def leimaus(l: LeimausIn):
         raise HTTPException(status_code=400, detail="Rastinumero vaaditaan")
     if l.tyyppi not in ("sisaan", "ulos"):
         raise HTTPException(status_code=400, detail="Virheellinen tyyppi")
+    automaattisesti_ulos = []
     if l.tyyppi == "sisaan":
         viimeisin = db.execute(
             "SELECT numero, tyyppi FROM leimaukset WHERE vartio=? ORDER BY id DESC LIMIT 1",
             (l.vartio.strip(),)
         ).fetchone()
         if viimeisin and viimeisin["tyyppi"] == "sisaan":
-            raise HTTPException(status_code=409, detail=f"{l.vartio.strip()} on jo rastilla {viimeisin['numero']} — leimaa ensin ulos")
+            edellinen = ryhman_rastit(viimeisin["numero"])
+            if l.rastinumero.strip() in edellinen:
+                raise HTTPException(status_code=409, detail=f"{l.vartio.strip()} on jo tällä rastilla")
+            if not l.pakota:
+                # Leimaussivu kysyy varmistuksen ja lähettää pyynnön uudelleen pakota=True
+                raise HTTPException(status_code=409, detail=f"jo_rastilla:{edellinen[0]}")
+            automaattisesti_ulos = edellinen[1:] + edellinen[:1]  # edustaja viimeisenä kuten ulosleimauksessa
         if not l.uudelleen:
             aiempi_ulos = db.execute(
                 "SELECT id FROM leimaukset WHERE vartio=? AND numero=? AND tyyppi='ulos'",
@@ -58,6 +65,12 @@ def leimaus(l: LeimausIn):
     # Rastiryhmässä (esim. yörastit) vartio leimataan samalla kertaa kaikille ryhmän rasteille. Edustajan rivi
     # kirjataan sisäänleimauksessa ensimmäisenä ja ulosleimauksessa viimeisenä, jotta siirtymäaikojen mediaanit
     # (edellinen rasti -> edustaja -> seuraava rasti) lasketaan ryhmälle oikein.
+    # Vartio oli vielä sisällä toisella rastilla: kirjataan sieltä ulos samalla ajalla. Merkintä leimaajan nimessä
+    # jättää siirtymän pois mediaaneista, koska oikeaa lähtöaikaa ei tiedetä.
+    for numero in automaattisesti_ulos:
+        db.execute("INSERT INTO leimaukset (kayttaja, numero, vartio, aika, tyyppi) VALUES (?,?,?,?,'ulos')",
+                   (session["nimi"] + AUTOMAATTINEN_ULOS, numero, l.vartio.strip(), l.aika))
+        _pysayta_ajastin(numero, l.vartio.strip())
     rastit = ryhman_rastit(l.rastinumero.strip())
     if l.tyyppi == "ulos":
         rastit = rastit[1:] + rastit[:1]
