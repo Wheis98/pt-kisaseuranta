@@ -45,6 +45,7 @@
         <li>Siirrä rasti <strong>+ Lisää reitille</strong> -napilla "Ei mukana reitillä" -listasta, jos sarjan pitää käydä sillä.</li>
         <li>Paina <strong>✕ Poista reitiltä</strong> jos sarja ei käy kyseisellä rastilla — leimaus onnistuu silti, mutta rasti ei vaikuta sarjan "Tulossa"-ennusteeseen.</li>
         <li>Jos sarjalle ei ole asetettu yhtään rastia reitille, käytetään rastien yleistä oletusjärjestystä.</li>
+        <li>Rastien välissä näkyy siirtymäaika, jolla saapumisarvio lasketaan: sarjan testikävelyn aika tai sen puuttuessa rastin oma arvio. Kun välillä on vähintään 2 toteutunutta siirtymää, arviossa käytetään niiden mediaania (näkyy rastisivulla).</li>
       </ul>
       <h3>Saman sarjan eri reitit (esim. Harmaa A ja Harmaa B)</h3>
       <ul>
@@ -103,6 +104,7 @@ let sarjat = [];
 let valittuId = null;
 let mukana = [];
 let puuttuu = [];
+let siirtymat = {};  // "lähtörasti-id>kohderasti-id" -> testikävelyn minuutit valitulle sarjalle
 let dragSrcIdx = null;
 
 async function lataaSarjat() {
@@ -161,6 +163,8 @@ async function lataaReitti() {
   const data = await res.json();
   mukana = data.mukana;
   puuttuu = data.puuttuu;
+  siirtymat = {};
+  (data.siirtymat || []).forEach(s => siirtymat[s.lahto_rasti_id + ">" + s.kohde_rasti_id] = s.minuutit);
   const sarja = sarjat.find(s => s.id === valittuId);
   document.getElementById("reitti-otsikko").textContent = "Sarjan reitti — " + (sarja ? sarja.nimi : "");
   naytaReittiOsiot(true);
@@ -216,6 +220,17 @@ function renderReitti() {
     li.addEventListener("dragleave", () => li.classList.remove("drag-over"));
     li.addEventListener("drop", async e => { e.preventDefault(); li.classList.remove("drag-over"); if (dragSrcIdx===null||dragSrcIdx===i) return; const s=mukana.splice(dragSrcIdx,1)[0]; mukana.splice(i,0,s); dragSrcIdx=null; renderReitti(); await tallennaReitti(); });
     ul.appendChild(li);
+    // Siirtymäaika seuraavalle rastille: testikävelyn aika, muuten rastin oma arvio (rastisivulta)
+    const seuraava = mukana[i+1];
+    if (seuraava) {
+      const sr = document.createElement("div");
+      sr.className = "siirtyma-row";
+      const min = siirtymat[r.id + ">" + seuraava.id];
+      sr.textContent = min != null ? `↓ ${min} min (testikävely)`
+        : r.ryhma && r.ryhma === seuraava.ryhma ? "↓ sama rastiryhmä"
+        : `↓ ${r.siirtyma_min} min (rastin arvio, ei testikävelyaikaa)`;
+      ul.appendChild(sr);
+    }
   });
 
   const pul = document.getElementById("puuttuu-lista");

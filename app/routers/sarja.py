@@ -81,7 +81,7 @@ def get_sarja_rastit(sarja_id: int):
     if not db.execute("SELECT 1 FROM sarjat WHERE id=?", (sarja_id,)).fetchone():
         raise HTTPException(status_code=404, detail="Sarjaa ei löydy")
     mukana = db.execute("""
-        SELECT r.id, r.numero FROM sarja_rastit sr
+        SELECT r.id, r.numero, r.ryhma, r.siirtyma_min FROM sarja_rastit sr
         JOIN rastit r ON r.id = sr.rasti_id
         WHERE sr.sarja_id=? ORDER BY sr.jarjestys, sr.id
     """, (sarja_id,)).fetchall()
@@ -90,6 +90,9 @@ def get_sarja_rastit(sarja_id: int):
     return {
         "mukana": [dict(r) for r in mukana],
         "puuttuu": [dict(r) for r in puuttuu if r["id"] not in mukana_idt],
+        # Testikävelyn siirtymäajat tälle sarjalle (näytetään reitin rastien välissä)
+        "siirtymat": [dict(r) for r in db.execute(
+            "SELECT lahto_rasti_id, kohde_rasti_id, minuutit FROM sarja_siirtymat WHERE sarja_id=?", (sarja_id,))],
     }
 
 @router.post("/api/sarja/{sarja_id}/rastit")
