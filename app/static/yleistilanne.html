@@ -10,6 +10,7 @@
     .rasti-otsikko { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .rasti-nimi { font-weight:700; font-size:1.05rem; }
     .muutos { font-size:.8rem; color:var(--muted); }
+    .kayneet { font-weight:700; font-size:.9rem; color:var(--primary); margin-right:auto; }
     .ryhma-otsikko { font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:10px 0 4px; }
     .rivi { display:flex; justify-content:space-between; gap:8px; padding:7px 10px; border:1.5px solid var(--border); border-radius:8px; margin-bottom:5px; font-size:.9rem; }
     .rivi .aika { color:var(--muted); font-size:.8rem; white-space:nowrap; }
@@ -83,6 +84,7 @@ async function lataa() {
     kortti.innerHTML = `
       <div class="rasti-otsikko">
         <span class="rasti-nimi"></span>
+        <span class="kayneet" title="Rastilta ulos leimatut / vartiot, joiden reitillä rasti on">${r.kayneet}/${r.vartioita} käynyt</span>
         <span class="muutos">Viimeisin muutos: ${r.viimeisin_muutos || "–"}</span>
       </div>
       <div class="ryhma-otsikko">Rastilla (${r.rastilla.length})</div>

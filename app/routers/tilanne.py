@@ -67,8 +67,24 @@ def yleistilanne(x_admin_token: str = Header(None), sarja: str = ""):
     loki_rows = [{**dict(x), "numero": ed(x["numero"])} for x in db.execute(
                      "SELECT numero, vartio, tapahtuma, aika, kayttaja FROM jono_loki ORDER BY id DESC").fetchall()
                  if mukana(x["vartio"])]
+    # Käyneet: vartiot, jotka on leimattu rastilta (tai ryhmän jostain rastista) ulos. Kokonaismäärä: vartiot, joiden
+    # sarjan reitillä rasti on (sarja ilman reittiä kiertää kaikki rastit) sekä reitin ulkopuolelta käyneet.
+    kayneet: dict = {}
+    for x in db.execute("SELECT DISTINCT numero, vartio FROM leimaukset WHERE tyyppi='ulos'"):
+        if mukana(x["vartio"]):
+            kayneet.setdefault(ed(x["numero"]), set()).add(x["vartio"])
+    sarjan_reitti: dict = {}
+    for x in db.execute("SELECT s.nimi, r.numero FROM sarja_rastit sr JOIN sarjat s ON s.id = sr.sarja_id JOIN rastit r ON r.id = sr.rasti_id"):
+        sarjan_reitti.setdefault(x["nimi"], set()).add(ed(x["numero"]))
+    kaikki_ed = set(map(ed, kaikki_rastit))
+    reitilla: dict = {}
+    for v, vs in vartion_sarja.items():
+        if mukana(v):
+            for n in sarjan_reitti.get(vs, kaikki_ed):
+                reitilla.setdefault(n, set()).add(v)
     tulos = []
     for n in rastit:
+        kaynyt = kayneet.get(n, set())
         matkalla_talta = [{"vartio": x["vartio"], "aika": x["aika"]} for x in matkalla if x["numero"] == n]
         rastilla = [{"vartio": x["vartio"], "aika": x["aika"]} for x in sisalla if x["numero"] == n]
         jono = [{"vartio": x["vartio"], "aika": x["aika"]} for x in jonossa if x["numero"] == n]
@@ -78,6 +94,7 @@ def yleistilanne(x_admin_token: str = Header(None), sarja: str = ""):
         ehdokkaat.sort(key=lambda a: _parse_aika(a) or _parse_aika("01.01.1970 00.00.00"))
         otsikko = f"{ryhman_nimi[n]}: {' · '.join(ryhmat[n])}" if n in ryhmat else f"Rasti {n}"
         tulos.append({"numero": n, "otsikko": otsikko, "rastilla": rastilla, "jonossa": jono,
+                      "kayneet": len(kaynyt), "vartioita": len(reitilla.get(n, set()) | kaynyt),
                       "jono_loki": loki, "matkalla": matkalla_talta,
                       "viimeisin_muutos": ehdokkaat[-1] if ehdokkaat else None})
     return tulos
