@@ -104,7 +104,7 @@ def tilanne(numero: str = ""):
     # Palauttaa kaikkien vartioiden tilanteen tietyltä rastilta katsottuna.
     # Status-arvot: rastilla_oma, rastilla_muu, tulossa, matkalla, ei_aloitettu.
     # Jos vartio lähti edelliseltä rastilta, lasketaan arvioitu saapumisaika
-    # mediaanin tai manuaalisen arvion perusteella.
+    # mediaanin, sarjan testikävelyn tai manuaalisen arvion perusteella (tässä järjestyksessä).
     from datetime import datetime, timedelta
 
     # Rastiryhmä käsitellään yhtenä rastina (edustaja): ryhmän leimaukset on kirjattu kaikille sen rasteille
@@ -123,6 +123,11 @@ def tilanne(numero: str = ""):
     oletus_rasti_lista = yhdista([r["numero"] for r in rastit_rows])
     siirtyma_map = {r["numero"]: r["siirtyma_min"] for r in rastit_rows}
     mediaanit = laske_siirtyma_mediaanit()
+    # Testikävelyn sarjakohtaiset siirtymäajat: (sarja, lähtörasti, kohderasti) -> minuutit, ryhmät edustajan nimellä
+    testikavely = {(r["sarja"], ed(r["lahto"]), ed(r["kohde"])): r["minuutit"] for r in db.execute("""
+        SELECT s.nimi AS sarja, l.numero AS lahto, k.numero AS kohde, ss.minuutit FROM sarja_siirtymat ss
+        JOIN sarjat s ON s.id = ss.sarja_id JOIN rastit l ON l.id = ss.lahto_rasti_id JOIN rastit k ON k.id = ss.kohde_rasti_id
+        ORDER BY l.jarjestys, k.jarjestys""")}
 
     # Sarjalla voi olla oma reittijärjestys (ks. app/routers/sarja.py) — jos sarjaa ei ole
     # määritelty tai sille ei ole asetettu reittiä, käytetään rastien oletusjärjestystä.
@@ -181,6 +186,9 @@ def tilanne(numero: str = ""):
                 if mediaani_key in mediaanit and mediaanit[mediaani_key]["n"] >= 2:
                     siirtyma = mediaanit[mediaani_key]["mediaani"]
                     siirtyma_lahde = "mediaani"
+                elif (v["sarja"], lahto_rasti, numero) in testikavely:
+                    siirtyma = testikavely[(v["sarja"], lahto_rasti, numero)]
+                    siirtyma_lahde = "testikavely"
                 else:
                     siirtyma = siirtyma_map.get(lahto_rasti, 5)
                     siirtyma_lahde = "arvio"

@@ -213,6 +213,15 @@ CREATE TABLE IF NOT EXISTS sarja_rastit (
   jarjestys INTEGER NOT NULL DEFAULT 0,
   UNIQUE(sarja_id, rasti_id)
 );
+-- Sarjakohtainen siirtymäaika rastilta toiselle (testikävelyn tulos). Käytetään saapumisarviossa,
+-- kun rastivälille ei ole vielä toteutunutta mediaania; puuttuessa käytetään rastin siirtyma_min-arviota.
+CREATE TABLE IF NOT EXISTS sarja_siirtymat (
+  sarja_id INTEGER NOT NULL,
+  lahto_rasti_id INTEGER NOT NULL,
+  kohde_rasti_id INTEGER NOT NULL,
+  minuutit REAL NOT NULL,
+  PRIMARY KEY (sarja_id, lahto_rasti_id, kohde_rasti_id)
+);
 """)
 
 # Migraatio: poistetaan virheellisesti lisätty rastinumero users-taulusta

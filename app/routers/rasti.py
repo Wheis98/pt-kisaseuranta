@@ -72,6 +72,7 @@ def delete_rasti(rasti_id: int, x_admin_token: str = Header(None)):
     # Poistaa rastin ja sen sarjakohtaiset reittimerkinnät
     vaadi_admin(x_admin_token)
     db.execute("DELETE FROM sarja_rastit WHERE rasti_id=?", (rasti_id,))
+    db.execute("DELETE FROM sarja_siirtymat WHERE lahto_rasti_id=? OR kohde_rasti_id=?", (rasti_id, rasti_id))
     db.execute("DELETE FROM rastit WHERE id=?", (rasti_id,))
     db.commit()
     return {"ok": True}
