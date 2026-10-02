@@ -65,12 +65,32 @@ def tee_kayttaja_pyynto(data: dict):
     rasti_id = data.get("rasti_id")
     if not etunimi or not sukunimi:
         raise HTTPException(status_code=400, detail="Etu- ja sukunimi vaaditaan")
+    if len(etunimi) > 60 or len(sukunimi) > 60:
+        raise HTTPException(status_code=400, detail="Nimi on liian pitkä")
     from datetime import datetime
     aika = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-    db.execute("INSERT INTO kayttaja_pyynnot (etunimi, sukunimi, rasti_id, aika) VALUES (?,?,?,?)",
-               (etunimi, sukunimi, rasti_id, aika))
+    # Sama henkilö voi lähettää pyynnön useasti: käsittelemätön pyyntö päivitetään eikä uutta luoda
+    aiemmat = _samannimiset_pyynnot(etunimi, sukunimi)
+    if aiemmat:
+        db.execute("UPDATE kayttaja_pyynnot SET aika=?, rasti_id=COALESCE(?, rasti_id) WHERE id=?", (aika, rasti_id, aiemmat[0]))
+    else:
+        db.execute("INSERT INTO kayttaja_pyynnot (etunimi, sukunimi, rasti_id, aika) VALUES (?,?,?,?)",
+                   (etunimi, sukunimi, rasti_id, aika))
     db.commit()
     return {"ok": True}
+
+def _sama_nimi(a: str, b: str) -> bool:
+    # Kirjainkoosta riippumaton vertailu Pythonissa: SQLiten lower() ei käsittele ä-, ö- ja å-kirjaimia
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+def _samannimiset_pyynnot(etunimi: str, sukunimi: str) -> list:
+    return [r["id"] for r in db.execute("SELECT id, etunimi, sukunimi FROM kayttaja_pyynnot ORDER BY id").fetchall()
+            if _sama_nimi(r["etunimi"], etunimi) and _sama_nimi(r["sukunimi"], sukunimi)]
+
+def _poista_samannimiset_pyynnot(etunimi: str, sukunimi: str) -> None:
+    for pyynto_id in _samannimiset_pyynnot(etunimi, sukunimi):
+        db.execute("DELETE FROM kayttaja_pyynnot WHERE id=?", (pyynto_id,))
+    db.commit()
 
 @router.get("/api/kayttaja/pyynnot")
 def get_kayttaja_pyynnot(x_admin_token: str = Header(None)):
@@ -90,8 +110,11 @@ def hyvaksy_kayttaja_pyynto(pyynto_id: int, x_admin_token: str = Header(None)):
     if not pyynto:
         raise HTTPException(status_code=404, detail="Pyyntöä ei löydy")
     nimi = pyynto["etunimi"] + " " + pyynto["sukunimi"]
-    if db.execute("SELECT id FROM users WHERE nimi=?", (nimi,)).fetchone():
-        raise HTTPException(status_code=409, detail=f"Käyttäjä '{nimi}' on jo olemassa")
+    if any(_sama_nimi(u["nimi"], nimi) for u in db.execute("SELECT nimi FROM users").fetchall()):
+        # Tunnus on jo luotu (esim. aiemmasta pyynnöstä) — ylimääräiset pyynnöt ovat turhia
+        _poista_samannimiset_pyynnot(pyynto["etunimi"], pyynto["sukunimi"])
+        raise HTTPException(status_code=409, detail=f"Käyttäjä '{nimi}' on jo olemassa, joten hänen pyyntönsä poistettiin. "
+                                                    "Jos salasana on unohtunut, nollaa se käyttäjälistasta.")
     token = str(uuid.uuid4())
     db.execute("INSERT INTO users (nimi, token) VALUES (?,?)", (nimi, token))
     db.commit()
@@ -100,8 +123,7 @@ def hyvaksy_kayttaja_pyynto(pyynto_id: int, x_admin_token: str = Header(None)):
         db.execute("INSERT OR IGNORE INTO rasti_oikeudet (user_id, rasti_id) VALUES (?,?)",
                    (user["id"], pyynto["rasti_id"]))
         db.commit()
-    db.execute("DELETE FROM kayttaja_pyynnot WHERE id=?", (pyynto_id,))
-    db.commit()
+    _poista_samannimiset_pyynnot(pyynto["etunimi"], pyynto["sukunimi"])
     return {"ok": True, "nimi": nimi}
 
 @router.delete("/api/kayttaja/pyynto/{pyynto_id}")

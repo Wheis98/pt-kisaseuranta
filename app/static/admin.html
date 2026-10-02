@@ -241,6 +241,10 @@ async function luoAdmin() {
   document.getElementById("uusi-kayttajanimi").value=""; document.getElementById("uusi-salasana").value="";
 }
 
+// Nimet tulevat käyttäjäpyynnöistä, joita kuka tahansa voi lähettää — näytetään aina tekstinä, ei HTML:nä
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+let kayttajaNimet = {};
+
 async function lataaUsers() {
   const res = await fetch("/api/users", { headers: { "x-admin-token": localStorage.getItem("admin_token") } });
   if (res.status === 403) { localStorage.removeItem("admin_token"); location.reload(); return; }
@@ -249,6 +253,7 @@ async function lataaUsers() {
   const lista = document.getElementById("user-lista");
   if (!users.length) { lista.innerHTML = '<div class="msg msg-ok" style="display:flex">Ei käyttäjiä.</div>'; return; }
   lista.innerHTML = "";
+  kayttajaNimet = Object.fromEntries(users.map(u => [u.id, u.nimi]));
   users.forEach(u => {
     const row = document.createElement("div");
     row.className = "row";
@@ -257,10 +262,10 @@ async function lataaUsers() {
       ? '<span class="badge badge-green">salasana asetettu</span>'
       : '<span class="badge badge-orange">ei salasanaa</span>';
     row.innerHTML = `
-      <span style="font-weight:600">${u.nimi} ${badge}</span>
+      <span style="font-weight:600">${esc(u.nimi)} ${badge}</span>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-xs" onclick="nollaaSalasana(${u.id},'${u.nimi.replace(/'/g,"\\'")}')">Nollaa salasana</button>
-        <button class="btn btn-danger btn-xs" onclick="poistaUser(${u.id},'${u.nimi.replace(/'/g,"\\'")}')">Poista</button>
+        <button class="btn btn-ghost btn-xs" onclick="nollaaSalasana(${u.id})">Nollaa salasana</button>
+        <button class="btn btn-danger btn-xs" onclick="poistaUser(${u.id})">Poista</button>
       </div>
     `;
     lista.appendChild(row);
@@ -280,14 +285,16 @@ async function luoUser() {
   await lataaUsers();
 }
 
-async function nollaaSalasana(id, nimi) {
+async function nollaaSalasana(id) {
+  const nimi = kayttajaNimet[id];
   if (!confirm(`Nollaa salasana käyttäjältä "${nimi}"?\nSeuraavalla kirjautumisella hän valitsee uuden salasanan.`)) return;
   const res = await fetch(`/api/user/${id}/reset_salasana`, { method:"POST", headers:{"x-admin-token":localStorage.getItem("admin_token")} });
   if (!res.ok) { alert("Virhe salasanan nollauksessa."); return; }
   await lataaUsers();
 }
 
-async function poistaUser(id, nimi) {
+async function poistaUser(id) {
+  const nimi = kayttajaNimet[id];
   if (!confirm(`Poistetaanko käyttäjä "${nimi}"?`)) return;
   const res = await fetch(`/api/user/${id}`, { method:"DELETE", headers:{"x-admin-token":localStorage.getItem("admin_token")} });
   if (!res.ok) { alert("Virhe poistamisessa."); return; }
@@ -349,11 +356,11 @@ async function lataaKayttajaPyynnot() {
     row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap";
     row.innerHTML = `
       <div>
-        <div style="font-weight:600">${p.etunimi} ${p.sukunimi}</div>
-        <div style="font-size:.8rem;color:var(--muted)">Rasti: ${rasti} · ${p.aika}</div>
+        <div style="font-weight:600">${esc(p.etunimi)} ${esc(p.sukunimi)}</div>
+        <div style="font-size:.8rem;color:var(--muted)">Rasti: ${esc(rasti)} · ${esc(p.aika)}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-success btn-xs" onclick="hyvaksyKayttajaPyynto(${p.id},'${(p.etunimi+' '+p.sukunimi).replace(/'/g,"\\'")}')">Hyväksy</button>
+        <button class="btn btn-success btn-xs" onclick="hyvaksyKayttajaPyynto(${p.id})">Hyväksy</button>
         <button class="btn btn-danger btn-xs" onclick="hylkaaKayttajaPyynto(${p.id})">Hylkää</button>
       </div>
     `;
@@ -361,7 +368,7 @@ async function lataaKayttajaPyynnot() {
   });
 }
 
-async function hyvaksyKayttajaPyynto(id, nimi) {
+async function hyvaksyKayttajaPyynto(id) {
   const res = await fetch(`/api/kayttaja/pyynto/${id}/hyvaksy`, { method: "POST", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
   if (res.ok) {
     const d = await res.json();
@@ -370,13 +377,16 @@ async function hyvaksyKayttajaPyynto(id, nimi) {
     await lataaUsers();
     await lataaOikeusKayttajat();
   } else {
-    const e = await res.json(); alert("Virhe: " + e.detail);
+    const e = await res.json().catch(() => ({})); alert("Virhe: " + (e.detail || res.status));
+    await lataaKayttajaPyynnot();  // esim. jo olemassa olevan käyttäjän pyynnöt poistuvat listalta
   }
 }
 
+// Ei vahvistuskysymystä: selain voi estää peräkkäiset confirm-ikkunat, jolloin hylkäys ei tekisi mitään.
+// Hylätyn pyynnön voi lähettää uudelleen.
 async function hylkaaKayttajaPyynto(id) {
-  if (!confirm("Hylätäänkö pyyntö?")) return;
-  await fetch(`/api/kayttaja/pyynto/${id}`, { method: "DELETE", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  const res = await fetch(`/api/kayttaja/pyynto/${id}`, { method: "DELETE", headers: { "x-admin-token": localStorage.getItem("admin_token") } });
+  if (!res.ok) alert("Pyynnön poisto epäonnistui (" + res.status + "). Kirjaudu tarvittaessa uudelleen.");
   await lataaKayttajaPyynnot();
 }
 
@@ -463,7 +473,7 @@ async function lataaOikeusPyynnot() {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px";
     row.innerHTML = `
-      <span style="font-size:.9rem"><strong>${p.nimi}</strong> pyytää pääsyä: <strong>Rasti ${p.numero}</strong> <span style="color:var(--muted);font-size:.8rem">(${p.aika})</span></span>
+      <span style="font-size:.9rem"><strong>${esc(p.nimi)}</strong> pyytää pääsyä: <strong>Rasti ${esc(p.numero)}</strong> <span style="color:var(--muted);font-size:.8rem">(${esc(p.aika)})</span></span>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-success btn-xs" onclick="hyvaksyPyynto(${p.id},${p.user_id},${p.rasti_id})">Hyväksy</button>
         <button class="btn btn-danger btn-xs" onclick="hylkaaPyynto(${p.id})">Hylkää</button>
