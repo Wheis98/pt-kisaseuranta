@@ -122,8 +122,8 @@
       </div>
       <div id="sisaan-kentat" style="display:none">
         <div class="field ac-wrap">
-          <label for="vartio">Vartion nimi</label>
-          <input type="text" id="vartio" placeholder="Kirjoita vartion nimi..." autocomplete="off">
+          <label for="vartio">Vartion nimi tai numero</label>
+          <input type="text" id="vartio" placeholder="Kirjoita vartion nimi tai numero..." autocomplete="off">
           <div id="ac-lista" class="ac-list" style="display:none"></div>
         </div>
         <div class="field">
@@ -215,10 +215,26 @@ function valitseVartio(v) {
   suljeAC();
 }
 function suljeAC() { document.getElementById("ac-lista").style.display="none"; acValittu=-1; }
+// Vartiot nimen osalla tai numeron alulla: täsmälleen sama numero ensin, sitten numerot, sitten nimet
+function haeVartiot(haku) {
+  const h = haku.trim().toLowerCase();
+  if (!h) return [];
+  const numero = v => String(v.numero || "").toLowerCase();
+  const tasan = vartioData.filter(v => numero(v) === h);
+  const alku = vartioData.filter(v => numero(v) !== h && numero(v).startsWith(h));
+  const nimi = vartioData.filter(v => v.nimi.toLowerCase().includes(h) && !numero(v).startsWith(h));
+  return [...tasan, ...alku, ...nimi];
+}
+// Kenttään jäänyt pelkkä vartion numero muutetaan vartion nimeksi tallennettaessa
+function vartionNimi(syote) {
+  const s = syote.trim();
+  if (vartioData.some(v => v.nimi === s)) return s;
+  return vartioData.find(v => String(v.numero || "") === s)?.nimi || s;
+}
 function naytaAC(haku) {
   const lista = document.getElementById("ac-lista");
   if (!haku) { suljeAC(); return; }
-  const osumat = vartioData.filter(v => v.nimi.toLowerCase().includes(haku.toLowerCase()));
+  const osumat = haeVartiot(haku);
   if (!osumat.length) { suljeAC(); return; }
   lista.innerHTML=""; acValittu=-1;
   osumat.forEach((v,i) => {
@@ -238,7 +254,7 @@ document.getElementById("vartio").addEventListener("keydown", e => {
   if (!rivit.length) return;
   if (e.key==="ArrowDown") { e.preventDefault(); acValittu=Math.min(acValittu+1,rivit.length-1); rivit.forEach((r,i)=>r.classList.toggle("active",i===acValittu)); }
   else if (e.key==="ArrowUp") { e.preventDefault(); acValittu=Math.max(acValittu-1,0); rivit.forEach((r,i)=>r.classList.toggle("active",i===acValittu)); }
-  else if (e.key==="Enter"&&acValittu>=0) { e.preventDefault(); const h=document.getElementById("vartio").value; const o=vartioData.filter(v=>v.nimi.toLowerCase().includes(h.toLowerCase())); if(o[acValittu]) valitseVartio(o[acValittu]); }
+  else if (e.key==="Enter"&&acValittu>=0) { e.preventDefault(); const o=haeVartiot(document.getElementById("vartio").value); if(o[acValittu]) valitseVartio(o[acValittu]); }
   else if (e.key==="Escape") suljeAC();
 });
 
@@ -443,7 +459,7 @@ async function avaaQR() {
 
 // ── Tallenna ──
 async function tallennaLeimaus() {
-  const vartio=document.getElementById("vartio").value.trim();
+  const vartio=vartionNimi(document.getElementById("vartio").value);
   const aika=document.getElementById("aika").value||aikaleima();
   setViesti("","");
   if(!vartio){setViesti("Syötä vartion nimi.","error");return;}
@@ -499,7 +515,7 @@ async function paivitaJono() {
 }
 
 async function lisaaJonoon() {
-  const vartio=document.getElementById("vartio").value.trim();
+  const vartio=vartionNimi(document.getElementById("vartio").value);
   const aika=document.getElementById("aika").value||aikaleima();
   setViesti("","");
   if(!vartio){setViesti("Syötä vartion nimi.","error");return;}
