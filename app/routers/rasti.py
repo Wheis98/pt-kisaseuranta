@@ -19,7 +19,7 @@ def get_rastit():
     # Palauttaa kaikki rastit järjestysnumeron mukaan, sisältää pisteytys_aktiivinen-kentän
     asetus = db.execute("SELECT arvo FROM asetukset WHERE avain='pisteytys_tila'").fetchone()
     pisteytys_tila = asetus["arvo"] if asetus else "kaikki_pois"
-    rows = db.execute("SELECT id, numero, jarjestys, kesto_min, siirtyma_min, pisteytys_kaytos FROM rastit ORDER BY jarjestys, id").fetchall()
+    rows = db.execute("SELECT id, numero, jarjestys, kesto_min, siirtyma_min, pisteytys_kaytos, ryhma FROM rastit ORDER BY jarjestys, id").fetchall()
     result = []
     for r in rows:
         d = dict(r)
@@ -40,8 +40,8 @@ def create_rasti(r: RastiIn, x_admin_token: str = Header(None)):
         raise HTTPException(status_code=400, detail="Rastinumero vaaditaan")
     max_j = db.execute("SELECT COALESCE(MAX(jarjestys),0) FROM rastit").fetchone()[0]
     try:
-        db.execute("INSERT INTO rastit (numero, jarjestys, kesto_min, siirtyma_min) VALUES (?,?,?,?)",
-                   (r.numero.strip(), max_j + 1, r.kesto_min, r.siirtyma_min))
+        db.execute("INSERT INTO rastit (numero, jarjestys, kesto_min, siirtyma_min, ryhma) VALUES (?,?,?,?,?)",
+                   (r.numero.strip(), max_j + 1, r.kesto_min, r.siirtyma_min, (r.ryhma or "").strip() or None))
         db.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Rasti on jo olemassa")
@@ -62,6 +62,8 @@ def update_rasti(rasti_id: int, r: RastiIn, x_admin_token: str = Header(None)):
     vaadi_admin(x_admin_token)
     db.execute("UPDATE rastit SET numero=?, kesto_min=?, siirtyma_min=? WHERE id=?",
                (r.numero.strip(), r.kesto_min, r.siirtyma_min, rasti_id))
+    if r.ryhma is not None:
+        db.execute("UPDATE rastit SET ryhma=? WHERE id=?", (r.ryhma.strip() or None, rasti_id))
     db.commit()
     return {"ok": True}
 

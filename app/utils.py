@@ -15,6 +15,23 @@ def vaadi_admin(x_admin_token: str = Header(None)):
 _mediaani_cache = {"aika": 0.0, "arvo": {}}
 _MEDIAANI_TTL_S = 30
 
+def ryhman_rastit(numero: str) -> list:
+    # Rastiryhmän kaikki rastit järjestyksessä (ensimmäinen on ryhmän edustaja, jonka leimaussivua käytetään).
+    # Rasti, joka ei kuulu ryhmään, on oma "ryhmänsä": [numero].
+    rivi = db.execute("SELECT ryhma FROM rastit WHERE numero=?", (numero,)).fetchone()
+    if not rivi or not rivi["ryhma"]:
+        return [numero]
+    return [r["numero"] for r in db.execute("SELECT numero FROM rastit WHERE ryhma=? ORDER BY jarjestys, id", (rivi["ryhma"],))]
+
+def ryhmien_edustajat() -> dict:
+    # Ryhmään kuuluvan rastin numero -> ryhmän edustaja (ensimmäinen rasti). Ryhmättömiä rasteja ei ole mukana.
+    edustajat: dict = {}
+    ensimmainen: dict = {}
+    for r in db.execute("SELECT numero, ryhma FROM rastit WHERE ryhma IS NOT NULL AND ryhma != '' ORDER BY jarjestys, id"):
+        ensimmainen.setdefault(r["ryhma"], r["numero"])
+        edustajat[r["numero"]] = ensimmainen[r["ryhma"]]
+    return edustajat
+
 def laske_siirtyma_mediaanit():
     # Välimuisti: mediaanit muuttuvat harvoin, mutta niitä haetaan jokaisen käyttäjän tilannepäivityksessä
     import time

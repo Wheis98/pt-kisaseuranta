@@ -394,6 +394,14 @@ try:
 except Exception:
     pass
 
+# Migraatio: rastiryhmä (esim. yörastit). Saman ryhmän rasteille leimataan samanaikaisesti yhdellä leimauksella
+# ja niiden pisteet syötetään yhdellä lomakkeella; tulokset pysyvät rastikohtaisina. NULL = ei ryhmää.
+try:
+    db.execute("ALTER TABLE rastit ADD COLUMN ryhma TEXT")
+    db.commit()
+except Exception:
+    pass
+
 # Vartion token on painettu QR-koodiin, joten sitä ei saa koskaan muuttaa luonnin jälkeen
 db.execute("""
 CREATE TRIGGER IF NOT EXISTS vartiot_token_lukittu
@@ -534,6 +542,7 @@ class RastiIn(BaseModel):
     numero: str
     kesto_min: int = 10
     siirtyma_min: int = 5
+    ryhma: str | None = None  # rastiryhmän nimi; "" = ei ryhmää, None = ei muuteta (PUT)
 
 
 class RastiJarjestysIn(BaseModel):

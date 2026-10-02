@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 from app import db, sessions, admin_sessions, LeimausIn, JonoIn, AjastinIn, STATIC_DIR
-from app.utils import vaadi_admin
+from app.utils import vaadi_admin, ryhman_rastit
 
 router = APIRouter()
 
@@ -55,19 +55,26 @@ def leimaus(l: LeimausIn):
             ).fetchone()
             if aiempi_ulos:
                 raise HTTPException(status_code=409, detail=f"uudelleen_kaynti:{l.vartio.strip()}")
-    db.execute(
-        "INSERT INTO leimaukset (kayttaja, numero, vartio, aika, tyyppi) VALUES (?,?,?,?,?)",
-        (session["nimi"], l.rastinumero.strip(), l.vartio.strip(), l.aika, l.tyyppi),
-    )
-    if l.tyyppi == "sisaan":
-        # Rastille otettu vartio poistuu tämän rastin jonosta
-        poistettu = db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip())).rowcount
-        if poistettu:
-            kirjaa_jono(l.rastinumero.strip(), l.vartio.strip(), "rastille", l.aika, session["nimi"])
-        # Uusi käynti aloittaa puhtaalta ajastimelta (edellisen käynnin ajat on jo tallennettu pisteisiin)
-        db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (l.rastinumero.strip(), l.vartio.strip()))
-    else:
-        _pysayta_ajastin(l.rastinumero.strip(), l.vartio.strip())
+    # Rastiryhmässä (esim. yörastit) vartio leimataan samalla kertaa kaikille ryhmän rasteille. Edustajan rivi
+    # kirjataan sisäänleimauksessa ensimmäisenä ja ulosleimauksessa viimeisenä, jotta siirtymäaikojen mediaanit
+    # (edellinen rasti -> edustaja -> seuraava rasti) lasketaan ryhmälle oikein.
+    rastit = ryhman_rastit(l.rastinumero.strip())
+    if l.tyyppi == "ulos":
+        rastit = rastit[1:] + rastit[:1]
+    for numero in rastit:
+        db.execute(
+            "INSERT INTO leimaukset (kayttaja, numero, vartio, aika, tyyppi) VALUES (?,?,?,?,?)",
+            (session["nimi"], numero, l.vartio.strip(), l.aika, l.tyyppi),
+        )
+        if l.tyyppi == "sisaan":
+            # Rastille otettu vartio poistuu tämän rastin jonosta
+            poistettu = db.execute("DELETE FROM jono WHERE numero=? AND vartio=?", (numero, l.vartio.strip())).rowcount
+            if poistettu:
+                kirjaa_jono(numero, l.vartio.strip(), "rastille", l.aika, session["nimi"])
+            # Uusi käynti aloittaa puhtaalta ajastimelta (edellisen käynnin ajat on jo tallennettu pisteisiin)
+            db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (numero, l.vartio.strip()))
+        else:
+            _pysayta_ajastin(numero, l.vartio.strip())
     db.commit()
     return {"ok": True}
 
@@ -111,22 +118,26 @@ def aloita_ajastin(a: AjastinIn):
     numero, vartio = a.rastinumero.strip(), a.vartio.strip()
     if db.execute("SELECT id FROM ajastimet WHERE numero=? AND vartio=?", (numero, vartio)).fetchone():
         raise HTTPException(status_code=409, detail="Ajastin on jo käynnistetty — nollaa se ensin")
-    db.execute("INSERT INTO ajastimet (numero, vartio, alku, kayttaja) VALUES (?,?,?,?)",
-               (numero, vartio, _nyt_iso(), session["nimi"]))
+    alku = _nyt_iso()
+    for n in ryhman_rastit(numero):  # rastiryhmässä sama ajastin kaikille ryhmän rasteille
+        db.execute("INSERT OR REPLACE INTO ajastimet (numero, vartio, alku, kayttaja) VALUES (?,?,?,?)",
+                   (n, vartio, alku, session["nimi"]))
     db.commit()
     return {"ok": True}
 
 @router.post("/api/ajastin/pysayta")
 def pysayta_ajastin(a: AjastinIn):
     _ajastin_istunto(a)
-    _pysayta_ajastin(a.rastinumero.strip(), a.vartio.strip())
+    for n in ryhman_rastit(a.rastinumero.strip()):
+        _pysayta_ajastin(n, a.vartio.strip())
     db.commit()
     return {"ok": True}
 
 @router.post("/api/ajastin/nollaa")
 def nollaa_ajastin(a: AjastinIn):
     _ajastin_istunto(a)
-    db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (a.rastinumero.strip(), a.vartio.strip()))
+    for n in ryhman_rastit(a.rastinumero.strip()):
+        db.execute("DELETE FROM ajastimet WHERE numero=? AND vartio=?", (n, a.vartio.strip()))
     db.commit()
     return {"ok": True}
 
@@ -203,6 +214,14 @@ def _syotteita_nakyvissa(taso: str, kohde: str) -> str:
 
 @router.get("/api/pisteita-odottavat")
 def pisteita_odottavat(numero: str):
+    # Rastiryhmässä vartio odottaa pisteitä, jos jokin ryhmän rasteista on pisteyttämättä
+    tulos: dict = {}
+    for n in ryhman_rastit(numero):
+        for v in _pisteita_odottavat_rastilla(n):
+            tulos.setdefault(v["vartio"], v)
+    return list(tulos.values())
+
+def _pisteita_odottavat_rastilla(numero: str):
     # Palauttaa vartiot jotka on leimattu ulos tältä rastilta mutta joiden kaikkia tehtäviä ei ole vielä pisteytetty.
     # Tehtävä on pisteytetty kun sillä on tulos, tai osatehtävällisellä tehtävällä kun jokaisella osatehtävällä on tulos.
     # Vain viimeisin leimaus per vartio ratkaisee (uudelleen sisään leimattu vartio ei ole vielä valmis).

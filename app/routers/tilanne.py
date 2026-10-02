@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import FileResponse
 from app import db, STATIC_DIR
-from app.utils import laske_siirtyma_mediaanit, vaadi_admin
+from app.utils import laske_siirtyma_mediaanit, vaadi_admin, ryhmien_edustajat
 
 router = APIRouter()
 
@@ -23,10 +23,16 @@ def _parse_aika(s):
     return None
 
 @router.get("/api/yleistilanne")
-def yleistilanne(x_admin_token: str = Header(None)):
+def yleistilanne(x_admin_token: str = Header(None), sarja: str = ""):
     # Admin-yleisnäkymä: jokaisen rastin vartiot rastilla ja jonossa sekä viimeisimmän kirjauksen aikaleima.
+    # sarja: näytetään vain sen sarjan vartiot ja rastit sarjan reitin järjestyksessä (reitin puuttuessa kaikki rastit).
     vaadi_admin(x_admin_token)
-    rastit = db.execute("SELECT numero FROM rastit ORDER BY jarjestys, id").fetchall()
+    kaikki_rastit = [r["numero"] for r in db.execute("SELECT numero FROM rastit ORDER BY jarjestys, id")]
+    reitti = [r["numero"] for r in db.execute("""
+        SELECT r.numero FROM sarja_rastit sr JOIN rastit r ON r.id = sr.rasti_id JOIN sarjat s ON s.id = sr.sarja_id
+        WHERE s.nimi=? ORDER BY sr.jarjestys, sr.id""", (sarja,))] if sarja else []
+    vartion_sarja = {r["nimi"]: r["sarja"] or "" for r in db.execute("SELECT nimi, sarja FROM vartiot")}
+    mukana = lambda vartio: not sarja or vartion_sarja.get(vartio) == sarja
     # Vartio on rastilla, jos sen viimeisin leimaus on sisäänleimaus
     sisalla = db.execute("""
         SELECT l.numero, l.vartio, l.aika FROM leimaukset l
@@ -39,13 +45,30 @@ def yleistilanne(x_admin_token: str = Header(None)):
         WHERE l.tyyppi='ulos' AND l.id = (SELECT MAX(id) FROM leimaukset l2 WHERE l2.vartio = l.vartio)
         ORDER BY l.id
     """).fetchall()
-    jonossa = db.execute("SELECT numero, vartio, aika FROM jono ORDER BY id").fetchall()
-    viimeisin = {r["numero"]: r["aika"] for r in db.execute(
-        "SELECT numero, aika FROM leimaukset WHERE id IN (SELECT MAX(id) FROM leimaukset GROUP BY numero)")}
-    loki_rows = db.execute("SELECT numero, vartio, tapahtuma, aika, kayttaja FROM jono_loki ORDER BY id DESC").fetchall()
+    # Rastiryhmän leimaukset ovat kaikilla ryhmän rasteilla; ryhmä näytetään yhtenä korttina edustajan kohdalla
+    edustajat = ryhmien_edustajat()
+    ed = lambda n: edustajat.get(n, n)
+    sisalla = [{**dict(x), "numero": ed(x["numero"])} for x in sisalla if mukana(x["vartio"])]
+    matkalla = [{**dict(x), "numero": ed(x["numero"])} for x in matkalla if mukana(x["vartio"])]
+    jonossa = [{**dict(x), "numero": ed(x["numero"])} for x in db.execute("SELECT numero, vartio, aika FROM jono ORDER BY id").fetchall()
+               if mukana(x["vartio"])]
+    rastit = []
+    # Reitin ulkopuolinen rasti, jolla sarjan vartio on, lisätään loppuun, ettei vartio katoa näkyvistä
+    for n in list(map(ed, reitti or kaikki_rastit)) + [x["numero"] for x in sisalla + matkalla + jonossa]:
+        if n not in rastit:
+            rastit.append(n)
+    ryhmat: dict = {}
+    for n, e in edustajat.items():
+        ryhmat.setdefault(e, []).append(n)
+    ryhman_nimi = {r["numero"]: r["ryhma"] for r in db.execute("SELECT numero, ryhma FROM rastit WHERE ryhma IS NOT NULL AND ryhma != ''")}
+    viimeisin: dict = {}
+    for r in db.execute("SELECT numero, aika FROM leimaukset WHERE id IN (SELECT MAX(id) FROM leimaukset GROUP BY numero) ORDER BY id"):
+        viimeisin[ed(r["numero"])] = r["aika"]  # ryhmälle uusin kaikista sen rasteista
+    loki_rows = [{**dict(x), "numero": ed(x["numero"])} for x in db.execute(
+                     "SELECT numero, vartio, tapahtuma, aika, kayttaja FROM jono_loki ORDER BY id DESC").fetchall()
+                 if mukana(x["vartio"])]
     tulos = []
-    for r in rastit:
-        n = r["numero"]
+    for n in rastit:
         matkalla_talta = [{"vartio": x["vartio"], "aika": x["aika"]} for x in matkalla if x["numero"] == n]
         rastilla = [{"vartio": x["vartio"], "aika": x["aika"]} for x in sisalla if x["numero"] == n]
         jono = [{"vartio": x["vartio"], "aika": x["aika"]} for x in jonossa if x["numero"] == n]
@@ -53,7 +76,8 @@ def yleistilanne(x_admin_token: str = Header(None)):
         loki = [dict(x) for x in loki_rows if x["numero"] == n][:5]
         ehdokkaat = [a for a in [viimeisin.get(n)] + [j["aika"] for j in jono] + [x["aika"] for x in loki] if a]
         ehdokkaat.sort(key=lambda a: _parse_aika(a) or _parse_aika("01.01.1970 00.00.00"))
-        tulos.append({"numero": n, "rastilla": rastilla, "jonossa": jono,
+        otsikko = f"{ryhman_nimi[n]}: {' · '.join(ryhmat[n])}" if n in ryhmat else f"Rasti {n}"
+        tulos.append({"numero": n, "otsikko": otsikko, "rastilla": rastilla, "jonossa": jono,
                       "jono_loki": loki, "matkalla": matkalla_talta,
                       "viimeisin_muutos": ehdokkaat[-1] if ehdokkaat else None})
     return tulos
@@ -66,8 +90,20 @@ def tilanne(numero: str = ""):
     # mediaanin tai manuaalisen arvion perusteella.
     from datetime import datetime, timedelta
 
+    # Rastiryhmä käsitellään yhtenä rastina (edustaja): ryhmän leimaukset on kirjattu kaikille sen rasteille
+    edustajat = ryhmien_edustajat()
+    ed = lambda n: edustajat.get(n, n)
+    def yhdista(reitti):
+        tulos = []
+        for n in map(ed, reitti):
+            if not tulos or tulos[-1] != n:
+                tulos.append(n)
+        return tulos
+    ryhman_jasenet = [n for n, e in edustajat.items() if e == ed(numero)] or [numero]
+    numero = ed(numero)
+
     rastit_rows = db.execute("SELECT numero, siirtyma_min FROM rastit ORDER BY jarjestys, id").fetchall()
-    oletus_rasti_lista = [r["numero"] for r in rastit_rows]
+    oletus_rasti_lista = yhdista([r["numero"] for r in rastit_rows])
     siirtyma_map = {r["numero"]: r["siirtyma_min"] for r in rastit_rows}
     mediaanit = laske_siirtyma_mediaanit()
 
@@ -81,7 +117,7 @@ def tilanne(numero: str = ""):
                 SELECT r.numero FROM sarja_rastit sr JOIN rastit r ON r.id = sr.rasti_id
                 WHERE sr.sarja_id=? ORDER BY sr.jarjestys, sr.id
             """, (sarja_row["id"],)).fetchall() if sarja_row else []
-            reitti_cache[sarja_nimi] = [x["numero"] for x in rivit] if rivit else oletus_rasti_lista
+            reitti_cache[sarja_nimi] = yhdista([x["numero"] for x in rivit]) if rivit else oletus_rasti_lista
         return reitti_cache[sarja_nimi]
 
     vartiot_rows = db.execute("SELECT nimi, sarja FROM vartiot ORDER BY nimi").fetchall()
@@ -89,10 +125,10 @@ def tilanne(numero: str = ""):
     kaynneet_set = set()
     if numero:
         kaynneet_set = set(row["vartio"] for row in db.execute(
-            "SELECT DISTINCT vartio FROM leimaukset WHERE numero=? AND tyyppi='ulos'", (numero,)
-        ).fetchall())
+            f"SELECT DISTINCT vartio FROM leimaukset WHERE numero IN ({','.join('?' * len(ryhman_jasenet))}) AND tyyppi='ulos'",
+            ryhman_jasenet).fetchall())
 
-    viimeisimmat = {r["vartio"]: r for r in db.execute(
+    viimeisimmat = {r["vartio"]: {**dict(r), "numero": ed(r["numero"])} for r in db.execute(
         "SELECT vartio, numero, tyyppi, aika FROM leimaukset WHERE id IN (SELECT MAX(id) FROM leimaukset GROUP BY vartio)")}
 
     result = []

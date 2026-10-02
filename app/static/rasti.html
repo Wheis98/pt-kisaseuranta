@@ -81,6 +81,8 @@ const nimi = localStorage.getItem("nimi");
 if (!token) window.location.href = "/";
 document.getElementById("kayttaja-info").textContent = nimi;
 
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
 let pyyntoRastiId = null;
 let pyyntoRastiNumero = null;
 
@@ -98,16 +100,22 @@ async function lataaRastit() {
   if (!lista.length) { eiDiv.style.display = "flex"; return; }
   eiDiv.style.display = "none";
 
-  lista.forEach(r => {
-    const sallittu = oikeus.kaikki || oikeus.oikeudet.includes(r.id);
+  // Rastiryhmä (esim. yörastit) näytetään yhtenä valintana: leimaus ja pisteet hoidetaan ryhmän ensimmäisen
+  // rastin sivulla kaikille ryhmän rasteille. Oikeus mihin tahansa ryhmän rastiin riittää.
+  const ryhmat = {};
+  lista.forEach(r => { if (r.ryhma) (ryhmat[r.ryhma] = ryhmat[r.ryhma] || []).push(r); });
+  lista.filter(r => !r.ryhma || ryhmat[r.ryhma][0] === r).forEach(r => {
+    const jasenet = r.ryhma ? ryhmat[r.ryhma] : [r];
+    const sallittu = oikeus.kaikki || jasenet.some(j => oikeus.oikeudet.includes(j.id));
+    const otsikko = r.ryhma ? `${esc(r.ryhma)}: ${jasenet.map(j => esc(j.numero)).join(" · ")}` : `Rasti ${esc(r.numero)}`;
     const btn = document.createElement("button");
     btn.className = "list-item btn-block" + (sallittu ? "" : " rasti-lukittu");
     btn.style.cssText = "cursor:pointer;border:none;text-align:left;background:var(--card);margin-bottom:8px;";
     btn.innerHTML = `
       <div class="dot ${sallittu ? 'dot-blue' : 'dot-gray'}"></div>
       <div>
-        <div class="list-item-name">${sallittu ? "" : '<span class="lukko-icon">🔒</span>'}Rasti ${r.numero}</div>
-        <div class="list-item-meta">${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä${sallittu ? "" : " · Ei käyttöoikeutta"}</div>
+        <div class="list-item-name">${sallittu ? "" : '<span class="lukko-icon">🔒</span>'}${otsikko}</div>
+        <div class="list-item-meta">${r.ryhma ? `${jasenet.length} rastia, leimaus ja pisteet yhdessä · ` : ""}${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä${sallittu ? "" : " · Ei käyttöoikeutta"}</div>
       </div>
     `;
     if (sallittu) {

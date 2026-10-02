@@ -25,12 +25,45 @@
   <div class="header-right"><a href="admin.html" class="btn btn-white btn-sm">← Admin</a></div>
 </div>
 <div class="container-wide">
-  <div id="lista" style="margin-top:24px"></div>
+  <div class="card" style="margin-top:24px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <label for="sarja" style="font-weight:700">Sarja</label>
+    <select id="sarja" onchange="valitseSarja()" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;min-width:200px">
+      <option value="">Kaikki sarjat</option>
+    </select>
+    <span id="sarja-ohje" style="font-size:.82rem;color:var(--muted)"></span>
+  </div>
+  <div id="lista"></div>
   <div id="paivitys" style="text-align:center;font-size:.78rem;color:var(--muted);margin:12px 0"></div>
 </div>
 <script>
 const adminToken = localStorage.getItem("admin_token");
 if (!adminToken) window.location.href = "/admin.html";
+
+// Valittu sarja muistetaan selaimessa; tyhjä = kaikki sarjat
+let valittuSarja = "";
+try { valittuSarja = localStorage.getItem("yleistilanne_sarja") || ""; } catch (e) {}
+
+async function lataaSarjat() {
+  const sarjat = await fetch("/api/sarjat").then(r => r.json()).catch(() => []);
+  const sel = document.getElementById("sarja");
+  sarjat.forEach(s => { const o = document.createElement("option"); o.value = s.nimi; o.textContent = s.nimi; sel.appendChild(o); });
+  if (!sarjat.some(s => s.nimi === valittuSarja)) valittuSarja = "";
+  sel.value = valittuSarja;
+  paivitaOhje();
+}
+
+function paivitaOhje() {
+  document.getElementById("sarja-ohje").textContent = valittuSarja
+    ? "Näytetään vain sarjan vartiot, rastit sarjan reitin järjestyksessä."
+    : "Näytetään kaikkien sarjojen vartiot.";
+}
+
+function valitseSarja() {
+  valittuSarja = document.getElementById("sarja").value;
+  try { localStorage.setItem("yleistilanne_sarja", valittuSarja); } catch (e) {}
+  paivitaOhje();
+  lataa();
+}
 
 function rivit(lista, tyhjaTeksti) {
   if (!lista.length) return `<div class="tyhja">${tyhjaTeksti}</div>`;
@@ -38,7 +71,7 @@ function rivit(lista, tyhjaTeksti) {
 }
 
 async function lataa() {
-  const res = await fetch("/api/yleistilanne", { headers: { "x-admin-token": adminToken } });
+  const res = await fetch("/api/yleistilanne?sarja=" + encodeURIComponent(valittuSarja), { headers: { "x-admin-token": adminToken } });
   if (res.status === 403) { localStorage.removeItem("admin_token"); location.href = "/admin.html"; return; }
   if (!res.ok) return;
   const rastit = await res.json();
@@ -58,7 +91,7 @@ async function lataa() {
       <div class="jonossa">${rivit(r.jonossa, "Ei jonoa")}</div>
       <div class="ryhma-otsikko">Jonon viimeisimmät tapahtumat</div>
       <div class="loki">${rivit(r.jono_loki, "Ei tapahtumia")}</div>`;
-    kortti.querySelector(".rasti-nimi").textContent = "Rasti " + r.numero;
+    kortti.querySelector(".rasti-nimi").textContent = r.otsikko || "Rasti " + r.numero;
     // Vartioiden nimet asetetaan textContentilla
     kortti.querySelectorAll(".rastilla .rivi").forEach((el, i) => el.firstElementChild.textContent = r.rastilla[i].vartio);
     kortti.querySelectorAll(".jonossa .rivi").forEach((el, i) => el.firstElementChild.textContent = (i + 1) + ". " + r.jonossa[i].vartio);
@@ -76,7 +109,7 @@ async function lataa() {
       vali.className = "vali";
       vali.innerHTML = `<div class="vali-otsikko"></div>${rivit(r.matkalla, "")}`;
       vali.querySelector(".vali-otsikko").textContent = seuraava
-        ? `↓ Matkalla: rasti ${r.numero} → rasti ${seuraava.numero} (${r.matkalla.length})`
+        ? `↓ Matkalla: ${r.otsikko || "rasti " + r.numero} → ${seuraava.otsikko || "rasti " + seuraava.numero} (${r.matkalla.length})`
         : `↓ Lähtenyt rastilta ${r.numero}, ei seuraavaa rastia (${r.matkalla.length})`;
       vali.querySelectorAll(".rivi").forEach((el, i) => el.firstElementChild.textContent = r.matkalla[i].vartio + " — lähti " + r.matkalla[i].aika);
       lista.appendChild(vali);
@@ -85,7 +118,7 @@ async function lataa() {
   if (!rastit.length) lista.innerHTML = '<div class="msg msg-ok">Ei rasteja.</div>';
   document.getElementById("paivitys").textContent = "Päivitetty " + new Date().toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
-lataa();
+lataaSarjat().then(lataa);
 setInterval(lataa, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) lataa(); });
 </script>

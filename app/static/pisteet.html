@@ -79,7 +79,9 @@ const adminOtsikot = adminMode ? { "x-admin-token": adminToken } : {};
 
 document.getElementById("vartio-info").textContent = vartio + (adminMode ? " · admin" : "");
 
-let suoritusId = null;
+// Rastiryhmässä (esim. yörastit) sivulla ovat kaikkien ryhmän rastien tehtävät; jokainen tehtävä tallennetaan
+// oman rastinsa suoritukseen (t._suoritusId). Yksittäisellä rastilla suorituksia on yksi.
+let suoritukset = [];
 let tehtavat = [];
 
 function takaisin() { window.location.href = adminMode ? "tulokset.html" : "leimaus.html"; }
@@ -317,10 +319,17 @@ function renderScore(tyyppi, id, prefix, existing, max, timerSek, syotteet, exis
   }
 }
 
-function renderTehtavat(tehtavat, suoritus) {
+// Lisää yhden rastin tehtävät listaan; otsikko näytetään rastiryhmässä rastien erottamiseksi
+function renderTehtavat(tehtavat, suoritus, otsikko) {
   const lista = document.getElementById("tehtavat-lista");
-  lista.innerHTML = "";
   const timerSek = ajastin ? ajastin.kesto : null;
+  if (otsikko) {
+    const h = document.createElement("div");
+    h.className = "card-title";
+    h.style.cssText = "margin:18px 0 8px;font-size:1rem";
+    h.textContent = otsikko;
+    lista.appendChild(h);
+  }
 
   tehtavat.forEach(t => {
     const hasOsa = t.osatehtavat && t.osatehtavat.length > 0;
@@ -472,21 +481,24 @@ async function tallenna() {
         for (const o of t.osatehtavat) {
           const s = getOsaScore(o);
           if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null || s.syotteet !== null) {
-            await tallennaTulos({suoritus_id:suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt});
+            await tallennaTulos({suoritus_id:t._suoritusId, osatehtava_id:o.id, ...s, token, aika:nyt});
           }
         }
       } else {
         const s = getTehtavaScore(t);
         if (s.pisteet !== null || s.oikein !== null || s.aika_sekuntia !== null || s.syotteet !== null) {
-          await tallennaTulos({suoritus_id:suoritusId, tehtava_id:t.id, ...s, token, aika:nyt});
+          await tallennaTulos({suoritus_id:t._suoritusId, tehtava_id:t.id, ...s, token, aika:nyt});
         }
       }
     }
 
+    // Kommentti tallennetaan jokaisen rastin suoritukseen; tallennus merkitsee samalla käynnin pisteytetyksi
     const kommentti = document.getElementById("kommentti").value.trim() || null;
-    const kRes = await fetch(`/api/suoritus/${suoritusId}`, { method:"PUT", headers:{"Content-Type":"application/json", ...adminOtsikot},
-      body: JSON.stringify({kommentti, token}) });
-    if (!kRes.ok) { const e = await kRes.json().catch(() => ({})); throw new Error(e.detail || kRes.status); }
+    for (const su of suoritukset) {
+      const kRes = await fetch(`/api/suoritus/${su.id}`, { method:"PUT", headers:{"Content-Type":"application/json", ...adminOtsikot},
+        body: JSON.stringify({kommentti, token}) });
+      if (!kRes.ok) { const e = await kRes.json().catch(() => ({})); throw new Error(e.detail || kRes.status); }
+    }
 
     document.getElementById("ok-viesti").style.display = "flex";
     setTimeout(() => takaisin(), 1200);
@@ -522,27 +534,31 @@ function suodataSarjalle(tehtavat, sarjaId) {
 async function init() {
   const lataus = document.getElementById("lataus");
   try {
-    const [rastiRes, suoritusRes, tehtavatRes] = await Promise.all([
-      fetch("/api/rastit"),
-      fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${rastiId}&token=${encodeURIComponent(token)}`, { headers: adminOtsikot }),
-      fetch(`/api/tehtavat?rasti_id=${rastiId}`),
-      haeAjastin()
-    ]);
+    const [rastit] = await Promise.all([fetch("/api/rastit").then(r => r.json()), haeAjastin()]);
+    const rasti = rastit.find(r => r.id === rastiId);
+    // Rastiryhmän kaikki rastit samalle lomakkeelle (adminin tulosmuokkaus on aina rastikohtainen)
+    const jasenet = rasti && rasti.ryhma && !adminMode ? rastit.filter(r => r.ryhma === rasti.ryhma) : [rasti || { id: rastiId, numero: "" }];
+    if (rasti) document.getElementById("otsikko").textContent = `${rasti.ryhma && !adminMode ? rasti.ryhma : "Rasti " + rasti.numero} — Pisteet`;
 
-    if (suoritusRes.status === 401) {
+    const ladatut = await Promise.all(jasenet.map(async r => {
+      const [suoritusRes, tehtavatRes] = await Promise.all([
+        fetch(`/api/suoritus?vartio=${encodeURIComponent(vartio)}&rasti_id=${r.id}&token=${encodeURIComponent(token)}`, { headers: adminOtsikot }),
+        fetch(`/api/tehtavat?rasti_id=${r.id}`),
+      ]);
+      if (suoritusRes.status === 401) return { kirjaudu: true };
+      if (!suoritusRes.ok) throw new Error("Virhe suorituksen latauksessa");
+      const suoritus = await suoritusRes.json();
+      const omat = suodataSarjalle(await tehtavatRes.json(), suoritus.sarja_id).map(t => ({ ...t, _suoritusId: suoritus.id }));
+      return { rasti: r, suoritus, tehtavat: omat };
+    }));
+    if (ladatut.some(x => x.kirjaudu)) {
       if (adminMode) { localStorage.removeItem("admin_token"); window.location.href = "/admin.html"; }
       else { localStorage.clear(); window.location.href = "/"; }
       return;
     }
-    if (!suoritusRes.ok) throw new Error("Virhe suorituksen latauksessa");
 
-    const rastit = await rastiRes.json();
-    const rasti = rastit.find(r => r.id === rastiId);
-    if (rasti) document.getElementById("otsikko").textContent = `Rasti ${rasti.numero} — Pisteet`;
-
-    const suoritus = await suoritusRes.json();
-    suoritusId = suoritus.id;
-    tehtavat = suodataSarjalle(await tehtavatRes.json(), suoritus.sarja_id);
+    suoritukset = ladatut.map(x => x.suoritus);
+    tehtavat = ladatut.flatMap(x => x.tehtavat);
 
     lataus.style.display = "none";
 
@@ -553,10 +569,12 @@ async function init() {
     }
 
     document.getElementById("tehtavat-lista").style.display = "block";
-    renderTehtavat(tehtavat, suoritus);
+    document.getElementById("tehtavat-lista").innerHTML = "";
+    ladatut.forEach(x => { if (x.tehtavat.length) renderTehtavat(x.tehtavat, x.suoritus, jasenet.length > 1 ? `Rasti ${x.rasti.numero}` : ""); });
 
     document.getElementById("kommentti-osio").style.display = "block";
-    if (suoritus.kommentti) document.getElementById("kommentti").value = suoritus.kommentti;
+    const kommentti = suoritukset.map(su => su.kommentti).find(Boolean);
+    if (kommentti) document.getElementById("kommentti").value = kommentti;
 
     document.getElementById("tallenna-btn").style.display = "block";
   } catch(e) {

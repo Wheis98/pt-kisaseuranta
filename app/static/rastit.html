@@ -59,6 +59,13 @@
         <li>Paina <strong>Muokkaa</strong> rastin nimen tai aikojen muuttamiseksi.</li>
         <li>Paina <strong>Poista</strong> rastin poistamiseksi.</li>
       </ul>
+      <h3>Rastiryhmät (esim. yörastit)</h3>
+      <ul>
+        <li>Anna rasteille sama <strong>Ryhmä</strong>-nimi (Muokkaa → Ryhmä), esim. "Yörastit". Ryhmän rastien pitää olla sarjojen reiteillä peräkkäin.</li>
+        <li>Rastihenkilö valitsee ryhmän yhtenä rastina. Yksi sisään- tai ulosleimaus kirjataan kaikille ryhmän rasteille, ja kaikkien rastien pisteet syötetään samalla lomakkeella yhdellä tallennuksella.</li>
+        <li>Tuloksissa rastit näkyvät erillisinä. Rastihenkilölle riittää käyttöoikeus yhteen ryhmän rastiin.</li>
+        <li>Muuta ryhmiä vain ennen kuin ryhmän rasteille on leimattu vartioita.</li>
+      </ul>
     </div>
   </div>
 </div>
@@ -128,6 +135,7 @@ function renderLista() {
       <span class="rasti-num">${i+1}</span>
       <span class="rasti-name">${r.numero}</span>
       <span class="rasti-meta">${r.kesto_min} min rastilla</span>
+      ${r.ryhma ? `<span class="badge badge-green" title="Rastiryhmä: leimaus ja pisteet yhdessä">${esc(r.ryhma)}</span>` : ''}
       ${pisteytysToggle}
       <a class="btn btn-ghost btn-xs" href="tehtavat.html?rasti_id=${r.id}">Tehtävät</a>
       <button class="btn btn-ghost btn-xs muokkaa-btn" onclick="avaMuokkaus(${i})">Muokkaa</button>
@@ -169,6 +177,8 @@ async function tallennaSiirtyma(id, idx) {
   btn.textContent="✓"; setTimeout(()=>{ btn.textContent="Tallenna"; },1500);
 }
 
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
 function avaaOhje() { document.getElementById("ohje-modal").style.display="flex"; }
 function suljeMo() { document.getElementById("ohje-modal").style.display="none"; }
 document.addEventListener("keydown", e => { if(e.key==="Escape") suljeMo(); });
@@ -186,6 +196,7 @@ function avaMuokkaus(idx) {
     <input type="text" id="m-numero-${idx}" value="${r.numero}" placeholder="Nimi">
     <input type="number" id="m-kesto-${idx}" value="${r.kesto_min}" min="1" placeholder="Kesto">
     <input type="number" id="m-siirtyma-${idx}" value="${r.siirtyma_min}" min="1" placeholder="Siirtymä">
+    <input type="text" id="m-ryhma-${idx}" value="${esc(r.ryhma || '')}" placeholder="Ryhmä (esim. Yörastit)" title="Saman ryhmän rastit leimataan ja pisteytetään yhdessä. Tyhjä = ei ryhmää.">
     <button class="btn btn-success btn-xs" onclick="tallennaMuokkaus(${idx},${r.id})">Tallenna</button>
     <button class="btn btn-ghost btn-xs" onclick="this.closest('.muokkaus-row').remove()">Peruuta</button>
   `;
@@ -196,8 +207,9 @@ async function tallennaMuokkaus(idx, id) {
   const numero = document.getElementById("m-numero-"+idx).value.trim();
   const kesto = parseInt(document.getElementById("m-kesto-"+idx).value);
   const siirtyma = parseInt(document.getElementById("m-siirtyma-"+idx).value);
+  const ryhma = document.getElementById("m-ryhma-"+idx).value.trim();
   if (!numero||isNaN(kesto)||isNaN(siirtyma)) return;
-  await fetch("/api/rasti/"+id, { method:"PUT", headers:adminHeaders(), body:JSON.stringify({numero,kesto_min:kesto,siirtyma_min:siirtyma}) });
+  await fetch("/api/rasti/"+id, { method:"PUT", headers:adminHeaders(), body:JSON.stringify({numero,kesto_min:kesto,siirtyma_min:siirtyma,ryhma}) });
   await lataaRastit();
 }
 
