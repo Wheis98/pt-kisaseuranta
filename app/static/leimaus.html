@@ -231,6 +231,15 @@ function vartionNimi(syote) {
   if (vartioData.some(v => v.nimi === s)) return s;
   return vartioData.find(v => String(v.numero || "") === s)?.nimi || s;
 }
+// Listoissa vartio näytetään numeron kanssa ("305 · Nimi") ja järjestetään numeron mukaan pienin ylimpänä;
+// numerottomat vartiot tulevat viimeisiksi nimen mukaan
+function vartionNumero(nimi) { return String(vartioData.find(v => v.nimi === nimi)?.numero || ""); }
+function vartioOtsikko(nimi) { const n = vartionNumero(nimi); return n ? `${n} · ${nimi}` : nimi; }
+function numeroJarjestys(nimiA, nimiB) {
+  const a = parseInt(vartionNumero(nimiA)), b = parseInt(vartionNumero(nimiB));
+  if (isNaN(a) !== isNaN(b)) return isNaN(a) ? 1 : -1;
+  return (isNaN(a) ? 0 : a - b) || nimiA.localeCompare(nimiB, "fi");
+}
 function naytaAC(haku) {
   const lista = document.getElementById("ac-lista");
   if (!haku) { suljeAC(); return; }
@@ -320,6 +329,7 @@ async function paivitaAktiiviset() {
   div.innerHTML="";
   if (!lista.length) { eiDiv.style.display="flex"; return; }
   eiDiv.style.display="none";
+  lista.sort((a,b) => numeroJarjestys(a.vartio, b.vartio));
   lista.forEach(v => {
     const vEsc = v.vartio.replace(/'/g,"\\'");
     const timerHTML = ajastinHTML(v.vartio);
@@ -331,7 +341,7 @@ async function paivitaAktiiviset() {
       <div style="display:flex;align-items:center;gap:10px;width:100%">
         <div class="dot dot-green"></div>
         <div class="active-item-info">
-          <div class="active-item-name">${v.vartio}</div>
+          <div class="active-item-name">${vartioOtsikko(v.vartio)}</div>
           <div class="active-item-meta">${v.aika}</div>
         </div>
         <button class="btn btn-danger btn-sm" onclick="leimaaUlos('${vEsc}',this)">Ulos</button>
@@ -380,6 +390,7 @@ async function paivitaPisteetOdottavat() {
   const div = document.getElementById("pisteet-odottavat-lista");
   div.innerHTML = "";
   card.style.display = lista.length ? "" : "none";
+  lista.sort((a,b) => numeroJarjestys(a.vartio, b.vartio));
   lista.forEach(v => {
     const item = document.createElement("div");
     item.className = "active-item";
@@ -389,7 +400,7 @@ async function paivitaPisteetOdottavat() {
         <div class="active-item-meta">ulos ${v.aika}</div>
       </div>
       <a class="btn btn-success btn-sm">Merkitse →</a>`;
-    item.querySelector(".active-item-name").textContent = v.vartio;
+    item.querySelector(".active-item-name").textContent = vartioOtsikko(v.vartio);
     item.querySelector("a").href = `pisteet.html?rasti_id=${rastiId}&vartio=${encodeURIComponent(v.vartio)}`;
     div.appendChild(item);
   });
@@ -519,7 +530,7 @@ async function paivitaJono() {
       </div>
       <button class="btn btn-success btn-sm">Rastille</button>
       <button class="btn btn-ghost btn-sm" style="margin-left:6px">✕</button>`;
-    item.querySelector(".active-item-name").textContent = v.vartio;
+    item.querySelector(".active-item-name").textContent = vartioOtsikko(v.vartio);
     const [rastilleBtn, poistaBtn] = item.querySelectorAll("button");
     rastilleBtn.onclick = () => otaJonosta(v.vartio, rastilleBtn);
     poistaBtn.onclick = () => poistaJonosta(v.id, poistaBtn);
@@ -603,7 +614,7 @@ function renderTulossa(vartiot) {
     const div=document.createElement("div");
     div.className="alert-item";
     const lahtiStr=v.aika?`<span style="color:var(--muted);font-size:.82rem"> · lähti ${muotoileAika(v.aika)}</span>`:"";
-    div.innerHTML=`<span><strong>${v.nimi}</strong>${lahtiStr}</span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
+    div.innerHTML=`<span><strong>${vartioOtsikko(v.nimi)}</strong>${lahtiStr}</span><span class="alert-item-time" style="${aikaVari}">~${aikaStr}</span>`;
     lista.appendChild(div);
   });
   osio.style.display="block";
@@ -619,7 +630,7 @@ function renderTilanneTab(vartiot) {
     v.status==="tulossa" ||
     (v.status==="matkalla" && v.sijainti===rastinumero)
   );
-  const sorted=[...relevantit].sort((a,b)=>JARJESTYS.indexOf(a.status)-JARJESTYS.indexOf(b.status));
+  const sorted=[...relevantit].sort((a,b)=>JARJESTYS.indexOf(a.status)-JARJESTYS.indexOf(b.status)||numeroJarjestys(a.nimi,b.nimi));
   const lista=document.getElementById("tilanne-lista");
   const tyhja=document.getElementById("tilanne-tyhja");
   if(!sorted.length){lista.innerHTML="";tyhja.style.display="flex";return;}
@@ -641,7 +652,7 @@ function renderTilanneTab(vartiot) {
     div.innerHTML=`
       <div class="dot ${STATUS_DOT[v.status]||""}" ${dotColor}></div>
       <div class="status-card-info">
-        <div class="status-card-name">${v.nimi}</div>
+        <div class="status-card-name">${vartioOtsikko(v.nimi)}</div>
         <div class="status-card-meta">${meta}</div>
       </div>
       <span style="font-size:.82rem;white-space:nowrap;${labelColor}">${labelStr}</span>
@@ -674,7 +685,8 @@ async function init() {
     rastiId = rasti.id; // luotettavampi kuin selaimen muistiin tallennettu arvo
     localStorage.setItem("rasti_id", rasti.id);
   }
-  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), lataaVartiot(), paivitaPisteetOdottavat(), paivitaJono()]);
+  await lataaVartiot().catch(()=>{});  // ensin, koska listat näyttävät vartion numeron
+  await Promise.all([paivitaAktiiviset(), paivitaTilanne(), paivitaPisteetOdottavat(), paivitaJono()]);
 }
 init();
 function paivitaKaikki() { paivitaAktiiviset(); paivitaTilanne(); paivitaPisteetOdottavat(); paivitaJono(); }
