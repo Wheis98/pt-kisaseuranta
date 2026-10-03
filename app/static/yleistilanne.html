@@ -66,6 +66,14 @@ function valitseSarja() {
   lataa();
 }
 
+// Vartio näytetään numeron kanssa ("305 · Nimi") kuten leimaussivulla
+let vartioNumerot = {};
+async function lataaVartiot() {
+  const vartiot = await fetch("/api/vartiot").then(r => r.json()).catch(() => []);
+  vartiot.forEach(v => { if (v.numero) vartioNumerot[v.nimi] = v.numero; });
+}
+function vartioOtsikko(nimi) { return vartioNumerot[nimi] ? `${vartioNumerot[nimi]} · ${nimi}` : nimi; }
+
 function rivit(lista, tyhjaTeksti) {
   if (!lista.length) return `<div class="tyhja">${tyhjaTeksti}</div>`;
   return lista.map((v, i) => `<div class="rivi"><span></span><span class="aika">${v.aika}</span></div>`).join("");
@@ -95,12 +103,12 @@ async function lataa() {
       <div class="loki">${rivit(r.jono_loki, "Ei tapahtumia")}</div>`;
     kortti.querySelector(".rasti-nimi").textContent = r.otsikko || "Rasti " + r.numero;
     // Vartioiden nimet asetetaan textContentilla
-    kortti.querySelectorAll(".rastilla .rivi").forEach((el, i) => el.firstElementChild.textContent = r.rastilla[i].vartio);
-    kortti.querySelectorAll(".jonossa .rivi").forEach((el, i) => el.firstElementChild.textContent = (i + 1) + ". " + r.jonossa[i].vartio);
+    kortti.querySelectorAll(".rastilla .rivi").forEach((el, i) => el.firstElementChild.textContent = vartioOtsikko(r.rastilla[i].vartio));
+    kortti.querySelectorAll(".jonossa .rivi").forEach((el, i) => el.firstElementChild.textContent = (i + 1) + ". " + vartioOtsikko(r.jonossa[i].vartio));
     const TAPAHTUMA = { jonoon: "jonoon", rastille: "jonosta rastille", poistettu: "poistettu jonosta" };
     kortti.querySelectorAll(".loki .rivi").forEach((el, i) => {
       const x = r.jono_loki[i];
-      el.firstElementChild.textContent = `${x.vartio} — ${TAPAHTUMA[x.tapahtuma] || x.tapahtuma}${x.kayttaja ? " (" + x.kayttaja + ")" : ""}`;
+      el.firstElementChild.textContent = `${vartioOtsikko(x.vartio)} — ${TAPAHTUMA[x.tapahtuma] || x.tapahtuma}${x.kayttaja ? " (" + x.kayttaja + ")" : ""}`;
     });
     lista.appendChild(kortti);
 
@@ -113,14 +121,14 @@ async function lataa() {
       vali.querySelector(".vali-otsikko").textContent = seuraava
         ? `↓ Matkalla: ${r.otsikko || "rasti " + r.numero} → ${seuraava.otsikko || "rasti " + seuraava.numero} (${r.matkalla.length})`
         : `↓ Lähtenyt rastilta ${r.numero}, ei seuraavaa rastia (${r.matkalla.length})`;
-      vali.querySelectorAll(".rivi").forEach((el, i) => el.firstElementChild.textContent = r.matkalla[i].vartio + " — lähti " + r.matkalla[i].aika);
+      vali.querySelectorAll(".rivi").forEach((el, i) => el.firstElementChild.textContent = vartioOtsikko(r.matkalla[i].vartio) + " — lähti " + r.matkalla[i].aika);
       lista.appendChild(vali);
     }
   });
   if (!rastit.length) lista.innerHTML = '<div class="msg msg-ok">Ei rasteja.</div>';
   document.getElementById("paivitys").textContent = "Päivitetty " + new Date().toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
-lataaSarjat().then(lataa);
+Promise.all([lataaSarjat(), lataaVartiot()]).then(lataa);
 setInterval(lataa, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) lataa(); });
 </script>
