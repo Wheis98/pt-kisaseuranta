@@ -113,7 +113,7 @@ def _poista_samannimiset_pyynnot(etunimi: str, sukunimi: str) -> None:
 def get_kayttaja_pyynnot(x_admin_token: str = Header(None)):
     vaadi_admin(x_admin_token)
     rows = db.execute("""
-        SELECT p.id, p.etunimi, p.sukunimi, p.rasti_id, r.numero, p.aika
+        SELECT p.id, p.etunimi, p.sukunimi, p.rasti_id, r.numero, r.ryhma, p.aika
         FROM kayttaja_pyynnot p
         LEFT JOIN rastit r ON r.id=p.rasti_id
         ORDER BY p.id DESC
@@ -210,7 +210,7 @@ def tee_pyynto(data: dict, token: str = ""):
 def get_pyynnot(x_admin_token: str = Header(None)):
     vaadi_admin(x_admin_token)
     rows = db.execute("""
-        SELECT p.id, p.user_id, u.nimi, p.rasti_id, r.numero, p.aika
+        SELECT p.id, p.user_id, u.nimi, p.rasti_id, r.numero, r.ryhma, p.aika
         FROM oikeus_pyynnot p
         JOIN users u ON u.id=p.user_id
         JOIN rastit r ON r.id=p.rasti_id

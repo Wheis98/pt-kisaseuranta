@@ -668,10 +668,8 @@ async function init() {
   const rasti = rastit.find(r=>r.numero===rastinumero);
   if (rasti) {
     // Rastiryhmä: leimaukset ja ajastimet kirjataan palvelimella kaikille ryhmän rasteille
-    if (rasti.ryhma) {
-      const jasenet = rastit.filter(r => r.ryhma === rasti.ryhma).map(r => r.numero);
-      document.getElementById("rasti-otsikko").textContent = `${rasti.ryhma}: ${jasenet.join(" · ")}`;
-    }
+    if (rasti.ryhma) document.getElementById("rasti-otsikko").textContent = rasti.ryhma;
+    localStorage.setItem("rasti_otsikko", rasti.ryhma || "Rasti " + rasti.numero);  // tilanne- ja leimaukset-sivun otsikkoon
     pisteytysAktiivinen = rasti.pisteytys_aktiivinen || false;
     rastiId = rasti.id; // luotettavampi kuin selaimen muistiin tallennettu arvo
     localStorage.setItem("rasti_id", rasti.id);

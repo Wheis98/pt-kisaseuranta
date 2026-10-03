@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi.responses import FileResponse
 from fastapi import APIRouter, HTTPException, Header
 from app import db, sessions, admin_sessions, LeimausIn, JonoIn, AjastinIn, STATIC_DIR
-from app.utils import vaadi_admin, ryhman_rastit, AUTOMAATTINEN_ULOS
+from app.utils import vaadi_admin, ryhman_rastit, rastin_nimi, AUTOMAATTINEN_ULOS
 
 router = APIRouter()
 
@@ -53,7 +53,7 @@ def leimaus(l: LeimausIn):
                 raise HTTPException(status_code=409, detail=f"{l.vartio.strip()} on jo tällä rastilla")
             if not l.pakota:
                 # Leimaussivu kysyy varmistuksen ja lähettää pyynnön uudelleen pakota=True
-                raise HTTPException(status_code=409, detail=f"jo_rastilla:{edellinen[0]}")
+                raise HTTPException(status_code=409, detail=f"jo_rastilla:{rastin_nimi(edellinen[0])}")
             automaattisesti_ulos = edellinen[1:] + edellinen[:1]  # edustaja viimeisenä kuten ulosleimauksessa
         if not l.uudelleen:
             aiempi_ulos = db.execute(
@@ -170,7 +170,7 @@ def lisaa_jonoon(j: JonoIn):
         "SELECT numero, tyyppi FROM leimaukset WHERE vartio=? ORDER BY id DESC LIMIT 1", (vartio,)
     ).fetchone()
     if viimeisin and viimeisin["tyyppi"] == "sisaan":
-        raise HTTPException(status_code=409, detail=f"{vartio} on jo rastilla {viimeisin['numero']}")
+        raise HTTPException(status_code=409, detail=f"{vartio} on jo rastilla {rastin_nimi(viimeisin['numero'])}")
     if db.execute("SELECT id FROM jono WHERE numero=? AND vartio=?", (numero, vartio)).fetchone():
         raise HTTPException(status_code=409, detail=f"{vartio} on jo jonossa")
     db.execute("INSERT INTO jono (numero, vartio, aika) VALUES (?,?,?)", (numero, vartio, j.aika))

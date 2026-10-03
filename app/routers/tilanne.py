@@ -92,7 +92,7 @@ def yleistilanne(x_admin_token: str = Header(None), sarja: str = ""):
         loki = [dict(x) for x in loki_rows if x["numero"] == n][:5]
         ehdokkaat = [a for a in [viimeisin.get(n)] + [j["aika"] for j in jono] + [x["aika"] for x in loki] if a]
         ehdokkaat.sort(key=lambda a: _parse_aika(a) or _parse_aika("01.01.1970 00.00.00"))
-        otsikko = f"{ryhman_nimi[n]}: {' · '.join(ryhmat[n])}" if n in ryhmat else f"Rasti {n}"
+        otsikko = ryhman_nimi[n] if n in ryhmat else f"Rasti {n}"
         tulos.append({"numero": n, "otsikko": otsikko, "rastilla": rastilla, "jonossa": jono,
                       "kayneet": len(kaynyt), "vartioita": len(reitilla.get(n, set()) | kaynyt),
                       "jono_loki": loki, "matkalla": matkalla_talta,
@@ -118,6 +118,7 @@ def tilanne(numero: str = ""):
         return tulos
     ryhman_jasenet = [n for n, e in edustajat.items() if e == ed(numero)] or [numero]
     numero = ed(numero)
+    ryhman_nimi = {r["numero"]: r["ryhma"] for r in db.execute("SELECT numero, ryhma FROM rastit WHERE ryhma IS NOT NULL AND ryhma != ''")}
 
     rastit_rows = db.execute("SELECT numero, siirtyma_min FROM rastit ORDER BY jarjestys, id").fetchall()
     oletus_rasti_lista = yhdista([r["numero"] for r in rastit_rows])
@@ -207,6 +208,7 @@ def tilanne(numero: str = ""):
             "nimi": v["nimi"],
             "status": status,
             "sijainti": sijainti,
+            "sijainti_otsikko": (ryhman_nimi.get(sijainti) or f"Rasti {sijainti}") if sijainti else None,
             "aika": aika,
             "arvioitu_saapuminen": arvioitu_saapuminen,
             "siirtyma_lahde": siirtyma_lahde if status == "tulossa" else None,

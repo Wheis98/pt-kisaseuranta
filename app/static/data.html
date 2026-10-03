@@ -79,7 +79,7 @@ if (isAdmin) {
   lataaVaihtoehdot();
 } else {
   const rastinumero = localStorage.getItem("rastinumero");
-  if (rastinumero) document.getElementById("otsikko").textContent = "Leimaukset — Rasti " + rastinumero;
+  if (rastinumero) document.getElementById("otsikko").textContent = "Leimaukset — " + (localStorage.getItem("rasti_otsikko") || "Rasti " + rastinumero);
 }
 
 async function lataaVaihtoehdot() {
@@ -88,7 +88,7 @@ async function lataaVaihtoehdot() {
     fetch("/api/vartiot").then(r => r.json())
   ]);
   const rs = document.getElementById("filter-rasti");
-  rastit.forEach(r => { const o = document.createElement("option"); o.value = r.numero; o.textContent = "Rasti " + r.numero; rs.appendChild(o); });
+  rastit.forEach(r => { const o = document.createElement("option"); o.value = r.numero; o.textContent = r.ryhma ? `${r.ryhma} (${r.numero})` : "Rasti " + r.numero; rs.appendChild(o); });
   const vs = document.getElementById("filter-vartio");
   vartiot.forEach(v => { const o = document.createElement("option"); o.value = v.nimi; o.textContent = v.nimi; vs.appendChild(o); });
 }

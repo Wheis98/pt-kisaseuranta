@@ -107,7 +107,9 @@ async function lataaRastit() {
   lista.filter(r => !r.ryhma || ryhmat[r.ryhma][0] === r).forEach(r => {
     const jasenet = r.ryhma ? ryhmat[r.ryhma] : [r];
     const sallittu = oikeus.kaikki || jasenet.some(j => oikeus.oikeudet.includes(j.id));
-    const otsikko = r.ryhma ? `${esc(r.ryhma)}: ${jasenet.map(j => esc(j.numero)).join(" · ")}` : `Rasti ${esc(r.numero)}`;
+    // Ryhmä näytetään pelkällä ryhmän nimellä (esim. "Yörasti")
+    const rastiNimi = r.ryhma || `Rasti ${r.numero}`;
+    const otsikko = esc(rastiNimi);
     const btn = document.createElement("button");
     btn.className = "list-item btn-block" + (sallittu ? "" : " rasti-lukittu");
     btn.style.cssText = "cursor:pointer;border:none;text-align:left;background:var(--card);margin-bottom:8px;";
@@ -119,9 +121,9 @@ async function lataaRastit() {
       </div>
     `;
     if (sallittu) {
-      btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); localStorage.setItem("rasti_id", r.id); window.location.href = "leimaus.html"; };
+      btn.onclick = () => { localStorage.setItem("rastinumero", r.numero); localStorage.setItem("rasti_id", r.id); localStorage.setItem("rasti_otsikko", rastiNimi); window.location.href = "leimaus.html"; };
     } else {
-      btn.onclick = () => avaaaPyynto(r.id, r.numero);
+      btn.onclick = () => avaaaPyynto(r.id, r.ryhma || r.numero);
     }
     div.appendChild(btn);
   });

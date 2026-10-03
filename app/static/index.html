@@ -227,9 +227,13 @@ async function lataaRastitPyyntoon() {
   const res = await fetch("/api/rastit");
   if (!res.ok) return;
   const rastit = await res.json();
+  // Rastiryhmä (esim. Yörasti) on yksi valinta ryhmän nimellä: oikeus ryhmän ensimmäiseen rastiin riittää koko ryhmään
+  const ryhmat = new Set();
   rastit.forEach(r => {
+    if (r.ryhma && ryhmat.has(r.ryhma)) return;
+    if (r.ryhma) ryhmat.add(r.ryhma);
     const o = document.createElement("option");
-    o.value = r.id; o.textContent = "Rasti " + r.numero;
+    o.value = r.id; o.textContent = r.ryhma || "Rasti " + r.numero;
     sel.appendChild(o);
   });
 }

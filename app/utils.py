@@ -36,6 +36,11 @@ def ryhmien_edustajat() -> dict:
         edustajat[r["numero"]] = ensimmainen[r["ryhma"]]
     return edustajat
 
+def rastin_nimi(numero: str) -> str:
+    # Käyttäjälle näytettävä nimi: rastiryhmän rasti näytetään ryhmän nimellä (esim. "Yörasti"), muu omallaan
+    rivi = db.execute("SELECT ryhma FROM rastit WHERE numero=?", (numero,)).fetchone()
+    return rivi["ryhma"] if rivi and rivi["ryhma"] else numero
+
 def laske_siirtyma_mediaanit():
     # Välimuisti: mediaanit muuttuvat harvoin, mutta niitä haetaan jokaisen käyttäjän tilannepäivityksessä
     import time
