@@ -110,6 +110,8 @@ async function lataaRastit() {
     // Ryhmä näytetään pelkällä ryhmän nimellä (esim. "Yörasti")
     const rastiNimi = r.ryhma || `Rasti ${r.numero}`;
     const otsikko = esc(rastiNimi);
+    // Jäsenrastien nimet otsikon alle, jotta ryhmän löytää myös rastin omalla nimellä (ei toisteta, jos ne ovat jo ryhmän nimessä)
+    const jasenNimet = r.ryhma && !jasenet.every(j => r.ryhma.includes(j.numero)) ? jasenet.map(j => esc(j.numero)).join(" · ") + " · " : "";
     const btn = document.createElement("button");
     btn.className = "list-item btn-block" + (sallittu ? "" : " rasti-lukittu");
     btn.style.cssText = "cursor:pointer;border:none;text-align:left;background:var(--card);margin-bottom:8px;";
@@ -117,7 +119,7 @@ async function lataaRastit() {
       <div class="dot ${sallittu ? 'dot-blue' : 'dot-gray'}"></div>
       <div>
         <div class="list-item-name">${sallittu ? "" : '<span class="lukko-icon">🔒</span>'}${otsikko}</div>
-        <div class="list-item-meta">${r.ryhma ? `${jasenet.length} rastia, leimaus ja pisteet yhdessä · ` : ""}${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä${sallittu ? "" : " · Ei käyttöoikeutta"}</div>
+        <div class="list-item-meta">${jasenNimet}${r.ryhma ? `${jasenet.length} rastia, leimaus ja pisteet yhdessä · ` : ""}${r.kesto_min} min rastilla · ${r.siirtyma_min} min siirtymä${sallittu ? "" : " · Ei käyttöoikeutta"}</div>
       </div>
     `;
     if (sallittu) {
